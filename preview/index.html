@@ -84,6 +84,18 @@
       </select>
     </label>
     <label>カード名義<input name="order[payment_attributes][source_attributes][name]" placeholder="例）HANAKO YAMADA"></label>
+
+    <!-- 実LPの注文内容テーブル(qa-*)を再現(チャット確認画面が自動取得する) -->
+    <table style="font-size:12px">
+      <tr><td class="qa-product_name">HugSkin C10 オールインセラム【定期】_0012</td>
+          <td class="qa-product_price">2,709円</td><td class="qa-product_quantity">1 個</td></tr>
+      <tr><td>送料 <span class="qa-deliv_fee">0円</span></td>
+          <td>消費税 <span class="qa-tax">271円</span></td>
+          <td>合計 <span class="qa-total">2,980円</span></td></tr>
+    </table>
+    <div class="qa-caution" style="font-size:11px;color:#888">・初回は「HugSkin C10 ALL IN SERUM」1本を86%OFFの1,980円(税込)でお届けします。
+・2回目以降は20%OFFの11,440円(税込)で30日前後を目安にお届けします。解約のお申し出があるまで定期的にお届けする自動更新コースです。
+・解約は次回発送予定日の10日前までにマイページよりお手続きください。</div>
     <label style="display:none" id="consent-row">
       <input type="checkbox" name="order[payment_attributes][source_attributes][consent]" style="width:auto"> 後払い規約に同意する
     </label>

@@ -8,11 +8,11 @@ window.HS_CHAT = {
   scenario: 'standard',
   vars: {
     /* 商品名はLPから自動取得されるので書かなくてよい(書けば上書き) */
-    PRICE: '初回限定 1,980円（税込）',   /* 価格は自動取得できないためここで指定。消せば価格文言は非表示になる */
+    PRICE: '初回限定 1,980円（税込）',   /* 挨拶文で使う価格表現(確認画面の金額はLPの注文内容テーブルから自動取得) */
   },
   mode: 'float',
   autoOpen: 'immediate',
   opening: { image: '', stockCheck: true },
 };
 </script>
-<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=1" defer></script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=2" defer></script>

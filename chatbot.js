@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.7.0
+    HugSkin 獲得チャットボット v3.8.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -377,6 +377,8 @@ var CSS = ''
 + '.sum td:last-child{color:#3a2a30;font-weight:500}'
 + '.sum tr:last-child td{border-bottom:none}'
 + '.sum tr.ro td{background:#fbf7f9;font-weight:600}'
++ '.sum tr.tot td{font-weight:700;font-size:13.5px;color:#3a2a30}'
++ '.law{font-size:10.5px;color:#8a7a80;line-height:1.6;padding:10px 12px;border-top:.5px solid rgba(0,0,0,.06);background:#fdfbfc;max-height:150px;overflow-y:auto}'
 + '.sum tr[data-k]{cursor:pointer}'
 + '.sum tr[data-k]:active td{background:#faf3f6}'
 + '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
@@ -705,6 +707,28 @@ function readProductName() {
 function readQty() {
   var el = document.querySelector('[name="order[order_items_attributes][][quantity]"]');
   return el && el.value ? String(el.value) : '';
+}
+
+/* ecforce標準の注文内容テーブル(qa-*クラス)から金額・商品・注意事項を自動取得。
+   2026-07-05 chat_test LPで確認した実在セレクタ:
+   qa-product_name / qa-product_price / qa-product_quantity / qa-deliv_fee /
+   qa-charge / qa-tax / qa-total / qa-caution(特商法・定期条件の注意喚起文) */
+function qaText(name) {
+  var el = document.querySelector('.qa-' + name);
+  return el ? (el.innerText || '').trim() : '';
+}
+function readOrderSummary() {
+  var total = qaText('total');
+  if (!total) return null;   // テーブル未描画のLPでは従来表示にフォールバック
+  return {
+    product: qaText('product_name').replace(/_\d+$/, '').trim(),
+    unit: qaText('product_price'),
+    qty: qaText('product_quantity'),
+    ship: qaText('deliv_fee'),
+    tax: qaText('tax'),
+    total: total,
+    caution: qaText('caution'),
+  };
 }
 
 /* LP内フォームの支払い方法selectから選択肢を自動生成
@@ -1062,11 +1086,21 @@ async function renderSummary(s) {
   else if (s.msg) botBubble(s.msg);
   editReturned = false;
   var rows = '';
-  /* ご注文内容(LPから自動取得。商品が変わってもここは自動で追従する) */
-  var prod = CFG.vars.PRODUCT || readProductName();
-  var qty = readQty();
-  if (prod) rows += '<tr class="ro"><td>商品</td><td>' + esc(prod) + (qty && qty !== '1' ? '　× ' + esc(qty) : '') + '</td><td></td></tr>';
-  if (CFG.vars.PRICE) rows += '<tr class="ro"><td>価格</td><td>' + esc(CFG.vars.PRICE) + '</td><td></td></tr>';
+  /* ご注文内容: ecforceの注文内容テーブル(qa-*)から自動取得。
+     商品・価格・オファーが変わってもタグ/シナリオの修正なしで追従する */
+  var os = readOrderSummary();
+  if (os) {
+    if (os.product) rows += '<tr class="ro"><td>商品</td><td>' + esc(os.product) + '</td><td></td></tr>';
+    if (os.unit) rows += '<tr class="ro"><td>単価</td><td>' + esc(os.unit) + (os.qty ? '　× ' + esc(os.qty) : '') + '</td><td></td></tr>';
+    if (os.ship) rows += '<tr class="ro"><td>送料</td><td>' + esc(os.ship) + '</td><td></td></tr>';
+    rows += '<tr class="ro tot"><td>合計</td><td>' + esc(os.total) + (os.tax ? '（うち消費税 ' + esc(os.tax) + '）' : '') + '</td><td></td></tr>';
+  } else {
+    /* テーブルが無いLPでは従来のフォールバック表示 */
+    var prod = CFG.vars.PRODUCT || readProductName();
+    var qty = readQty();
+    if (prod) rows += '<tr class="ro"><td>商品</td><td>' + esc(prod) + (qty && qty !== '1' ? '　× ' + esc(qty) : '') + '</td><td></td></tr>';
+    if (CFG.vars.PRICE) rows += '<tr class="ro"><td>価格</td><td>' + esc(CFG.vars.PRICE) + '</td><td></td></tr>';
+  }
   ['name_full', 'kana_full', 'name_last', 'name_first', 'kana_last', 'kana_first', 'email', 'tel', 'password', 'sex', 'birthdate', 'zip', 'pref', 'addr1', 'addr2'].forEach(function (k) {
     if (!answers[k]) return;
     var v = k === 'password' ? '••••••••' : answers[k];
@@ -1083,7 +1117,10 @@ async function renderSummary(s) {
 
   var card = document.createElement('div');
   card.className = 'sum';
-  card.innerHTML = '<table>' + rows + '</table><button class="go">' + esc(s.submitLabel || '注文フォームへ進む →') + '</button>';
+  card.innerHTML = '<table>' + rows + '</table>'
+    /* 特商法・定期条件の注意喚起(ecforceのqa-cautionを転記。最終確認画面の表示義務対応) */
+    + (os && os.caution ? '<div class="law">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
+    + '<button class="go">' + esc(s.submitLabel || '注文フォームへ進む →') + '</button>';
   msgsEl.appendChild(card); scrollBottom();
   /* 確認カードは高さがあるため、描画後にもう一度確実にスクロールする(見落とし防止) */
   setTimeout(function () {
@@ -1208,7 +1245,22 @@ function fillLocalForm(form) {
   }, 900);
 }
 
+/* 転記も例外時に無言で止まらないようにする */
 function transfer() {
+  try {
+    transferInner();
+  } catch (err) {
+    try {
+      if (window.dataLayer) window.dataLayer.push({ event: 'hs_chat_error', hs_error: 'transfer: ' + String((err && err.message) || err).slice(0, 200) });
+      if (window.clarity) window.clarity('event', 'hs_chat_error');
+    } catch (e2) {}
+    botBubble('申し訳ありません、転記中にエラーが発生しました🙏\nお手数ですが、下のフォームから直接ご注文いただくか、\nページを再読み込みしてもう一度お試しください');
+    var sbtn = msgsEl.querySelector('.sum .go');
+    if (sbtn) { sbtn.disabled = false; sbtn.textContent = 'もう一度試す →'; }
+  }
+}
+
+function transferInner() {
   resolveSkips();
 
   /* モードA: LP内フォームへ直接入力 */
