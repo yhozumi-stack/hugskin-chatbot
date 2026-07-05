@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.13.0
+    HugSkin 獲得チャットボット v3.14.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -87,6 +87,10 @@ var DEFAULTS = {
   ecforceOrderUrl: 'https://hugskin.shop/shop/orders/new',
   loginUrl: 'https://hugskin.shop/shop/customers/sign_in',  // 会員向けログイン画面
   paymentChoices: null,            // 支払い選択肢の手動指定(通常はLPフォームから自動生成されるので不要)
+  /* 支払いボタンの表示文言をタグから変更(キー=元の文言に含まれる語、値=表示したい文言)。
+     例: paymentLabels: { 'クレジット': 'クレジットカード【手数料0円】' }
+     ⚠️変更後の文言にも「クレジット」「後払い」の語は残すこと(カード入力・規約表示の判定に使うため) */
+  paymentLabels: {},
   zipApi: 'https://zipcloud.ibsnet.co.jp/api/search?zipcode=',
 };
 
@@ -233,6 +237,51 @@ var FIRST_TIME_STEP = { type: 'choice', key: 'first_time', intro: 'HugSkinのご
   memberMsg: '会員の方はログインしてからのご注文がスムーズです✨\n（ご登録済みのメールアドレスでは、新規のお客様用フォームからはご注文いただけません）' };
 SCENARIOS.member_ask = SCENARIOS.standard.slice(0, 3).concat([FIRST_TIME_STEP], SCENARIOS.standard.slice(3));
 
+/* form-plus完全再現シナリオ(文言・グルーピングとも 2026-07-06 に保積さんが採取した実物と同一)。
+   タグで scenario: 'formplus' を指定して使う */
+SCENARIOS.formplus = [
+  { type: 'stock' },
+  { type: 'openingImage' },
+
+  { type: 'fields', key: 'name', layout: 'stack', enterNext: false,
+    intro: 'それでは受付を開始いたします！\nお名前をご入力でクーポンが適用されます！',
+    fields: [
+      { key: 'name_full', label: '名前', placeholder: '例：山田 花子',
+        autocomplete: 'name', validate: 'required', norm: 'nameSpace' },
+      { key: 'kana_full', label: 'フリガナ', placeholder: '例：ヤマダ ハナコ',
+        validate: 'kana', norm: 'kana' },
+    ] },
+
+  { type: 'birth', key: 'birthdate', withSex: true, defaultYear: 1992,
+    intro: '次に生年月日と性別をご入力ください！' },
+
+  { type: 'address', key: 'addr',
+    intro: 'お届け先と電話番号をご入力ください！' },
+
+  { type: 'fields', key: 'contact', layout: 'stack',
+    intro: '注文情報を確認するための\nマイページに使用する\nメールアドレスとパスワードをご入力ください！',
+    fields: [
+      { key: 'email', label: 'メールアドレス', placeholder: '例：hanako@example.com',
+        inputType: 'email', inputmode: 'email', autocomplete: 'email', validate: 'email' },
+      { key: 'password', label: 'パスワード（半角英数8文字以上）',
+        inputType: 'password', autocomplete: 'new-password', validate: 'password',
+        displayAs: '••••••••' },
+    ] },
+
+  { type: 'choice', key: 'payment',
+    intro: '最後にお支払い方法を選択してください！',
+    choices: [
+      { label: 'クレジットカード', value: '21' },
+      { label: '後払い（コンビニ/銀行）', value: '102' },
+    ] },
+
+  { type: 'card', key: 'card',
+    intro: 'カード情報をご入力ください🔒\n（暗号化された注文フォームに反映されます）' },
+
+  { type: 'summary', msg: '',
+    submitLabel: 'この内容で注文を確定する →' },
+];
+
 /* 確認画面などで使う項目名 */
 var LABELS = {
   name_full: 'お名前', kana_full: 'フリガナ',
@@ -325,7 +374,7 @@ var editReturnIdx = null;  // 修正完了後に戻るステップindex
 var pendingIdx = 0;        // いま表示中の質問のステップindex
 var prefilled = false;     // 確認画面表示時にLPフォームへ先行転記済みか
 var totalInput = steps.filter(function (s) {
-  return s.type === 'fields' || s.type === 'zip' || s.type === 'choice' || s.type === 'card' || s.type === 'birth';
+  return s.type === 'fields' || s.type === 'zip' || s.type === 'choice' || s.type === 'card' || s.type === 'birth' || s.type === 'address';
 }).length;
 
 /* ---------- Shadow DOM シェル ---------- */
@@ -431,7 +480,14 @@ var CSS = ''
 + '.modal-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:14px;font-weight:700;color:#3a2a30;border-bottom:1px solid rgba(0,0,0,.08);flex-shrink:0}'
 + '.modal-x{background:none;border:none;font-size:20px;color:#9a8a90;cursor:pointer;line-height:1;padding:2px 6px}'
 + '.modal-card .sum{margin:0;border:none;border-radius:0;box-shadow:none;overflow-y:auto;flex:1;animation:none}'
-+ '.inline-box{position:relative}';
++ '.inline-box{position:relative}'
+/* 性別ボタン(生年月日カード内・formplusシナリオ) */
++ '.sexrow{display:flex;gap:8px}'
++ '.sexrow .ch{flex:1;text-align:center}'
++ '.sexrow .ch.on{background:' + CFG.theme.brand + ';color:#fff}'
+/* 郵便番号検索ボタン(住所複合カード) */
++ '.zip-search{display:block;margin-top:6px;background:#fff;border:1px solid ' + CFG.theme.brand + ';color:' + CFG.theme.brand + ';border-radius:8px;padding:8px 12px;font-size:12.5px;font-family:inherit;cursor:pointer;width:100%}'
++ '.zip-search:active{background:' + CFG.theme.brandLight + '}';
 
 var host = document.createElement('div');
 host.id = 'hs-chat-host';
@@ -644,6 +700,9 @@ function stepIndexByKey(key) {
     if (s.type === 'fields') {
       for (var j = 0; j < s.fields.length; j++) if (s.fields[j].key === key) return i;
     }
+    /* 複合カード: 住所+電話 / 生年月日+性別 の中の項目も引けるようにする */
+    if (s.type === 'address' && ['zip', 'pref', 'addr1', 'addr2', 'tel'].indexOf(key) >= 0) return i;
+    if (s.type === 'birth' && s.withSex && key === 'sex') return i;
   }
   return -1;
 }
@@ -694,6 +753,12 @@ function startEdit(key) {
   }
   if (s.type === 'zip' && answers.zip) prefill.zip = answers.zip;
   if (s.type === 'birth' && answers.birthdate) prefill.birthdate = answers.birthdate;
+  if (s.type === 'birth' && s.withSex && answers.sex) prefill.sex = answers.sex;
+  if (s.type === 'address') {
+    ['zip', 'pref', 'addr1', 'addr2', 'tel'].forEach(function (k) {
+      if (answers[k] != null) prefill[k] = answers[k];
+    });
+  }
   if (s.type === 'card') {
     ['card_number', 'card_month', 'card_year', 'card_name'].forEach(function (k) {
       if (answers[k] != null) prefill[k] = answers[k];
@@ -774,6 +839,7 @@ async function runStepInner(i) {
   if (s.type === 'zip')    return renderZip(s, i);
   if (s.type === 'fields') return renderFields(s, i);
   if (s.type === 'birth')  return renderBirth(s, i);
+  if (s.type === 'address') return renderAddress(s, i);
   if (s.type === 'card')   return renderCard(s, i);
   if (s.type === 'summary') return renderSummary(s);
 }
@@ -841,10 +907,21 @@ function paymentChoicesFromPage() {
 }
 
 function renderChoice(s, i) {
-  botBubble(stepIntro(s));
+  var it = stepIntro(s);
+  if (it) botBubble(it);
   var wrapC = document.createElement('div');
   wrapC.className = 'choices';
   var choiceList = (s.key === 'payment' && (paymentChoicesFromPage() || CFG.paymentChoices)) || s.choices;
+  /* 支払いボタンの表示文言をタグの paymentLabels で差し替え(値はそのまま) */
+  if (s.key === 'payment' && CFG.paymentLabels) {
+    choiceList = choiceList.map(function (c) {
+      var lbl = c.label;
+      for (var k in CFG.paymentLabels) {
+        if (lbl.indexOf(k) >= 0) { lbl = CFG.paymentLabels[k]; break; }
+      }
+      return { label: lbl, value: c.value };
+    });
+  }
   choiceList.forEach(function (c) {
     var b = document.createElement('button');
     b.className = 'ch';
@@ -992,25 +1069,49 @@ function renderFields(s, i) {
 }
 
 /* 生年月日カード: 年/月/日の数字リストが最初から見えるスクロール選択式。
-   年はdefaultYear(1992)が選択済み+リスト中央に表示。月と日を選ぶと自動で次へ進む */
+   年はdefaultYear(1992)が選択済み+リスト中央に表示。月と日を選ぶと自動で次へ進む。
+   withSex:true で性別ボタンも同じカードに入る(form-plus風グルーピング) */
 function renderBirth(s, i) {
-  botBubble(stepIntro(s));
+  var it = stepIntro(s);
+  if (it) botBubble(it);
   var card = document.createElement('div');
   card.className = 'card';
   card.innerHTML =
       '<div class="fld"><label>生年月日（タップで選択）</label><div class="pick3">'
     + '<div class="pick" id="pk-y"></div><div class="pick" id="pk-m"></div><div class="pick" id="pk-d"></div>'
     + '</div></div>'
+    + (s.withSex ? '<div class="fld"><label>性別</label><div class="sexrow">'
+      + '<button type="button" class="ch" data-sex="2">女性</button>'
+      + '<button type="button" class="ch" data-sex="1">男性</button>'
+      + '</div></div>' : '')
     + '<button class="go">次へ →</button>';
   msgsEl.appendChild(card); scrollBottom();
 
-  var sel = { y: null, m: null, d: null };
+  var sel = { y: null, m: null, d: null, sex: null, sexLabel: '' };
   if (prefill.birthdate) {
     var p = prefill.birthdate.split('/');
     if (p.length === 3) { sel.y = +p[0]; sel.m = +p[1]; sel.d = +p[2]; }
     delete prefill.birthdate;
   }
+  if (s.withSex && prefill.sex) { sel.sex = prefill.sex; delete prefill.sex; }
   if (!sel.y) sel.y = s.defaultYear || 1992;   // 年は初期選択済み
+
+  /* 性別ボタン(withSex時) */
+  if (s.withSex) {
+    var sexBtns = card.querySelectorAll('.sexrow .ch');
+    for (var sb = 0; sb < sexBtns.length; sb++) {
+      (function (btn) {
+        if (sel.sex === btn.getAttribute('data-sex')) btn.classList.add('on');
+        btn.addEventListener('click', function () {
+          for (var x = 0; x < sexBtns.length; x++) sexBtns[x].classList.remove('on');
+          btn.classList.add('on');
+          sel.sex = btn.getAttribute('data-sex');
+          sel.sexLabel = btn.textContent;
+          maybeDone();
+        });
+      })(sexBtns[sb]);
+    }
+  }
 
   function buildCol(el, from, to, unit, key) {
     for (var v = from; v <= to; v++) {
@@ -1044,17 +1145,104 @@ function renderBirth(s, i) {
   function submit() {
     clearErrors();
     if (!sel.y || !sel.m || !sel.d) { showError('生年月日を選択してください'); return; }
+    if (s.withSex && !sel.sex) { showError('性別を選択してください'); return; }
     var v = sel.y + '/' + ('0' + sel.m).slice(-2) + '/' + ('0' + sel.d).slice(-2);
     clearCards();
     answers.birthdate = v;
-    userBubble(v, 'birthdate');
+    if (s.withSex) {
+      answers.sex = sel.sex;
+      answers.sex_label = sel.sexLabel || (sel.sex === '2' ? '女性' : '男性');
+    }
+    userBubble(v + (s.withSex ? '　' + answers.sex_label : ''), 'birthdate');
     if (!editMode) { doneCount++; progress(); }
     track('step_birth');
     next(i);
   }
-  /* 年月日が3つ揃ったら自動で次へ(年は初期選択済みなので月+日タップで進む) */
-  function maybeDone() { if (sel.y && sel.m && sel.d) submit(); }
+  /* 全部揃ったら自動で次へ(年は初期選択済みなので月+日(+性別)タップで進む) */
+  function maybeDone() { if (sel.y && sel.m && sel.d && (!s.withSex || sel.sex)) submit(); }
   card.querySelector('.go').addEventListener('click', submit);
+}
+
+/* 住所+電話番号の複合カード(form-plus風グルーピング)。
+   郵便番号(7桁で自動検索/検索ボタンも有り)→都道府県・市区町村に自動反映。
+   番地・建物、電話番号まで1カードで入力する */
+function renderAddress(s, i) {
+  var it = stepIntro(s);
+  if (it) botBubble(it);
+  var card = document.createElement('div');
+  card.className = 'card';
+  var prefOpts = '<option value="">選択してください</option>';
+  PREFS.forEach(function (p) { prefOpts += '<option value="' + p + '">' + p + '</option>'; });
+  card.innerHTML =
+      '<div class="fld"><label>郵便番号（ハイフン不要）</label>'
+    + '<input id="ad-zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例：1500001">'
+    + '<button type="button" class="zip-search">郵便番号から住所を検索</button></div>'
+    + '<div class="fld"><label>都道府県</label><select id="ad-pref" autocomplete="address-level1">' + prefOpts + '</select></div>'
+    + '<div class="fld"><label>市区町村</label><input id="ad-city" type="text" placeholder="例：渋谷区神宮前"></div>'
+    + '<div class="fld"><label>番地・建物名など</label><input id="ad-banchi" type="text" placeholder="例：1-2-3 ハグスキンマンション201"></div>'
+    + '<div class="fld"><label>電話番号（ハイフン不要）</label>'
+    + '<input id="ad-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="例：09012345678"></div>'
+    + '<button class="go">次へ →</button>';
+  msgsEl.appendChild(card); scrollBottom();
+
+  var zipIn = card.querySelector('#ad-zip'), prefSel = card.querySelector('#ad-pref');
+  var cityIn = card.querySelector('#ad-city'), banchiIn = card.querySelector('#ad-banchi');
+  var telIn = card.querySelector('#ad-tel');
+  var searchBtn = card.querySelector('.zip-search');
+
+  /* 修正時のプリフィル */
+  if (prefill.zip)   { zipIn.value = prefill.zip; delete prefill.zip; }
+  if (prefill.pref)  { prefSel.value = prefill.pref; delete prefill.pref; }
+  if (prefill.addr1) { cityIn.value = prefill.addr1; delete prefill.addr1; }
+  if (prefill.addr2) { banchiIn.value = prefill.addr2; delete prefill.addr2; }
+  if (prefill.tel)   { telIn.value = prefill.tel; delete prefill.tel; }
+
+  var searching = false;
+  function doSearch() {
+    var z = NORMS.zip(zipIn.value);
+    if (!/^\d{7}$/.test(z) || searching) return;
+    searching = true;
+    searchBtn.textContent = '検索中…';
+    fetch(CFG.zipApi + z).then(function (res) { return res.json(); }).then(function (j) {
+      if (j && j.results && j.results[0]) {
+        prefSel.value = j.results[0].address1;
+        cityIn.value = (j.results[0].address2 || '') + (j.results[0].address3 || '');
+      }
+    }).catch(function () {}).then(function () {
+      searching = false;
+      searchBtn.textContent = '郵便番号から住所を検索';
+      scrollBottom();
+    });
+  }
+  searchBtn.addEventListener('click', doSearch);
+  var autoZip = '';
+  zipIn.addEventListener('input', function () {
+    var z = NORMS.zip(zipIn.value);
+    if (/^\d{7}$/.test(z) && z !== autoZip) { autoZip = z; doSearch(); }  // 7桁で自動検索
+  });
+
+  card.querySelector('.go').addEventListener('click', function () {
+    clearErrors();
+    var z = NORMS.zip(zipIn.value);
+    var tel = NORMS.tel(telIn.value);
+    var err = VALIDATORS.zip(z)
+      || (!prefSel.value ? '都道府県を選択してください' : null)
+      || (!cityIn.value.trim() ? '市区町村を入力してください' : null)
+      || (!banchiIn.value.trim() ? '番地・建物名を入力してください' : null)
+      || (VALIDATORS.tel(tel) ? '電話番号：' + VALIDATORS.tel(tel) : null);
+    if (err) { showError(err); return; }
+    clearCards();
+    answers.zip = z;
+    answers.pref = prefSel.value;
+    answers.addr1 = cityIn.value.trim();
+    answers.addr2 = banchiIn.value.trim();
+    answers.tel = tel;
+    userBubble('〒' + z.slice(0, 3) + '-' + z.slice(3) + '　' + answers.pref + answers.addr1 + answers.addr2 + '\n📞 ' + tel, 'addr');
+    if (!editMode) { doneCount++; progress(); }
+    track('step_addr');
+    next(i);
+  });
+  maybeFocus(zipIn);
 }
 
 /* クレジットカード入力カード。
