@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.1.0
+    HugSkin 獲得チャットボット v3.1.1
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -762,6 +762,18 @@ function fillLocalForm(form) {
   }
   setField(form, 'order[payment_attributes][payment_method_id]', answers.payment);
   /* カード番号・後払い同意チェックは意図的に触らない */
+
+  /* ecforce側LPの郵便番号自動補完JSが zip01 のinputイベントに反応して
+     非同期で住所欄を上書き(addr02をクリア)することがあるため、
+     少し待ってから住所3欄を再セットする(実LP ug29_test で実測した挙動) */
+  setTimeout(function () {
+    if (answers.pref) {
+      var pid = PREFS.indexOf(answers.pref) + 1;
+      if (pid > 0) setField(form, 'order[billing_address_attributes][prefecture_id]', String(pid));
+    }
+    setField(form, 'order[billing_address_attributes][addr01]', answers.addr1);
+    setField(form, 'order[billing_address_attributes][addr02]', answers.addr2);
+  }, 900);
 }
 
 function transfer() {

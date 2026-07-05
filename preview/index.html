@@ -73,6 +73,20 @@
   document.addEventListener('input', e => {
     if (e.target.name && e.target.value) e.target.style.outline = '2px solid #7bc47f';
   }, true);
+
+  // ecforce実LPの「郵便番号自動補完」を模擬(実LPで確認した上書き挙動の再現)
+  // zip01へのinputイベントの500ms後に addr01 を自動補完し addr02 をクリアする
+  document.querySelector('[name="order[billing_address_attributes][zip01]"]')
+    .addEventListener('input', () => {
+      setTimeout(() => {
+        const f = document.forms[0].action ? document.forms[0] : null;
+        const a1 = document.querySelector('[name="order[billing_address_attributes][addr01]"]');
+        const a2 = document.querySelector('[name="order[billing_address_attributes][addr02]"]');
+        a1.value = '渋谷区神宮前';   // 補完で上書き
+        a2.value = '';               // クリアされてしまう(これが実LPのバグ再現)
+        a2.style.outline = '';
+      }, 500);
+    });
 </script>
 <!-- ▲▲ フォームモックここまで ▲▲ -->
 
