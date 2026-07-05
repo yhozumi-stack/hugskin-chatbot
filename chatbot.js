@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.6.0
+    HugSkin 獲得チャットボット v3.7.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -356,6 +356,9 @@ var CSS = ''
 + '.card input:focus,.card select:focus{border-color:' + CFG.theme.brand + ';background:#fff}'
 + '.two{display:grid;grid-template-columns:1fr 1fr;gap:9px}'
 + '.three{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px}'
++ '.mail-sug{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}'
++ '.sug{background:#fff;border:1px solid ' + CFG.theme.brand + ';color:' + CFG.theme.brand + ';border-radius:8px;padding:6px 10px;font-size:12px;font-family:inherit;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis}'
++ '.sug:active{background:' + CFG.theme.brandLight + '}'
 + '.two .fld{margin-bottom:0}'
 + '.go{display:block;width:100%;margin-top:10px;padding:12px;background:' + CFG.theme.brand + ';color:#fff;border:none;border-radius:8px;font-size:14px;font-family:inherit;font-weight:600;cursor:pointer;transition:background .15s,transform .1s;letter-spacing:.02em}'
 + '.go:hover{background:' + CFG.theme.brandDark + '}'
@@ -619,7 +622,21 @@ function startEdit(key) {
   runStep(idx);
 }
 
+/* runStep本体はrunStepInner。例外が起きても無言で止まらず、
+   ユーザーに再読み込みを案内し、計測(hs_chat_error)に原因を送る */
 async function runStep(i) {
+  try {
+    await runStepInner(i);
+  } catch (err) {
+    try {
+      if (window.dataLayer) window.dataLayer.push({ event: 'hs_chat_error', hs_error: String((err && err.message) || err).slice(0, 200) });
+      if (window.clarity) window.clarity('event', 'hs_chat_error');
+    } catch (e2) {}
+    try { botBubble('申し訳ありません、エラーが発生しました🙏\nページを再読み込みして、もう一度お試しください'); } catch (e3) {}
+  }
+}
+
+async function runStepInner(i) {
   current = i;
   if (i >= steps.length) return;
   var s = steps[i];
@@ -799,6 +816,11 @@ function renderFields(s, i) {
     }
   });
 
+  /* メール欄には @ 以降のドメインサジェストを付ける */
+  s.fields.forEach(function (f, idx) {
+    if ((f.inputType || '') === 'email') attachEmailSuggest(card.querySelector('#f' + idx));
+  });
+
   var goBtn = card.querySelector('.go');
   goBtn.addEventListener('click', function () {
     clearErrors();
@@ -842,9 +864,7 @@ function renderFields(s, i) {
   maybeFocus(card.querySelector('input,select'));
 }
 
-/* 生年月日カード: 直入力とプルダウンの両対応。
-   テキスト欄(例:19920115)にそのまま打ってもいいし、
-   下の 年/月/日 プルダウンで選んでもいい(選ぶとテキスト欄に反映される) */
+/* 生年月日カード: 年/月/日のプルダウン選択式(年の初期値はシナリオのdefaultYear) */
 function renderBirth(s, i) {
   botBubble(s.intro);
   var card = document.createElement('div');
@@ -860,9 +880,7 @@ function renderBirth(s, i) {
   for (var d = 1; d <= 31; d++) dOpts += '<option value="' + d + '">' + d + '</option>';
 
   card.innerHTML =
-      '<div class="fld"><label>生年月日（直接入力）</label>'
-    + '<input id="bd-txt" type="text" inputmode="numeric" placeholder="例：19920115"></div>'
-    + '<div class="fld"><label>または選択で入力</label><div class="three">'
+      '<div class="fld"><label>生年月日</label><div class="three">'
     + '<select id="bd-y">' + yOpts + '</select>'
     + '<select id="bd-m">' + mOpts + '</select>'
     + '<select id="bd-d">' + dOpts + '</select>'
@@ -870,39 +888,25 @@ function renderBirth(s, i) {
     + '<button class="go">次へ →</button>';
   msgsEl.appendChild(card); scrollBottom();
 
-  var txt = card.querySelector('#bd-txt');
   var selY = card.querySelector('#bd-y'), selM = card.querySelector('#bd-m'), selD = card.querySelector('#bd-d');
 
   /* 修正時のプリフィル */
   if (prefill.birthdate) {
-    txt.value = prefill.birthdate;
     var p = prefill.birthdate.split('/');
     if (p.length === 3) { selY.value = String(+p[0]); selM.value = String(+p[1]); selD.value = String(+p[2]); }
     delete prefill.birthdate;
   }
 
-  /* プルダウンが3つ揃ったらテキスト欄に反映 */
-  function syncFromSelects() {
-    if (selY.value && selM.value && selD.value) {
-      txt.value = selY.value + '/' + ('0' + selM.value).slice(-2) + '/' + ('0' + selD.value).slice(-2);
-    }
-  }
-  [selY, selM, selD].forEach(function (sel) { sel.addEventListener('change', syncFromSelects); });
-
   card.querySelector('.go').addEventListener('click', function () {
     clearErrors();
-    var v = NORMS.birth(txt.value.trim());
-    var err = txt.value.trim() ? VALIDATORS.birth(v) : '生年月日を入力または選択してください';
-    if (err) { showError(err); return; }
+    if (!selY.value || !selM.value || !selD.value) { showError('生年月日を選択してください'); return; }
+    var v = selY.value + '/' + ('0' + selM.value).slice(-2) + '/' + ('0' + selD.value).slice(-2);
     clearCards();
     answers.birthdate = v;
     userBubble(v, 'birthdate');
     if (!editMode) { doneCount++; progress(); }
     track('step_birth');
     next(i);
-  });
-  txt.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); card.querySelector('.go').click(); }
   });
 }
 
@@ -968,6 +972,36 @@ function renderCard(s, i) {
   maybeFocus(card.querySelector('#cc-num'));
 }
 
+/* メール入力の @ 以降にドメイン候補チップを出す(タップで補完) */
+var MAIL_DOMAINS = ['gmail.com', 'yahoo.co.jp', 'icloud.com', 'docomo.ne.jp', 'au.com', 'ezweb.ne.jp', 'softbank.ne.jp', 'outlook.jp', 'hotmail.co.jp'];
+function attachEmailSuggest(inp) {
+  if (!inp) return;
+  var box = document.createElement('div');
+  box.className = 'mail-sug';
+  inp.parentElement.appendChild(box);
+  inp.addEventListener('input', function () {
+    box.innerHTML = '';
+    var v = inp.value;
+    var at = v.indexOf('@');
+    if (at < 1) return;
+    var local = v.slice(0, at), dom = v.slice(at + 1);
+    MAIL_DOMAINS.filter(function (d) { return d.indexOf(dom) === 0 && d !== dom; }).slice(0, 4)
+      .forEach(function (d) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'sug';
+        b.textContent = local + '@' + d;
+        b.addEventListener('click', function () {
+          inp.value = local + '@' + d;
+          box.innerHTML = '';
+          inp.focus();
+        });
+        box.appendChild(b);
+      });
+    scrollBottom();
+  });
+}
+
 function renderZip(s, i) {
   botBubble(s.intro);
   var card = document.createElement('div');
@@ -1011,6 +1045,13 @@ function renderZip(s, i) {
     next(i);
   });
   zipIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); goBtn.click(); } });
+  /* 7桁入力されたら「次へ」を押さなくても自動で住所検索して進む */
+  var autoFired = false;
+  zipIn.addEventListener('input', function () {
+    if (autoFired) return;
+    var z = NORMS.zip(zipIn.value);
+    if (/^\d{7}$/.test(z)) { autoFired = true; goBtn.click(); }
+  });
   maybeFocus(zipIn);
 }
 
@@ -1044,6 +1085,11 @@ async function renderSummary(s) {
   card.className = 'sum';
   card.innerHTML = '<table>' + rows + '</table><button class="go">' + esc(s.submitLabel || '注文フォームへ進む →') + '</button>';
   msgsEl.appendChild(card); scrollBottom();
+  /* 確認カードは高さがあるため、描画後にもう一度確実にスクロールする(見落とし防止) */
+  setTimeout(function () {
+    scrollBottom();
+    try { card.scrollIntoView({ block: 'end' }); } catch (e) {}
+  }, 400);
   track('summary_view');
   /* 行タップ → その項目だけ修正 */
   card.querySelector('table').addEventListener('click', function (e) {
