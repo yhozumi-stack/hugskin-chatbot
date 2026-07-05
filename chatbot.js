@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.15.0
+    HugSkin 獲得チャットボット v3.16.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -475,8 +475,14 @@ var CSS = ''
 + '.sum tr[data-k]:active td{background:#faf3f6}'
 + '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
 + '.sum .go{width:calc(100% - 20px);margin:10px}'
-/* 後払い規約ボックス(チャット内) */
-+ '.law-box{margin-left:36px;font-size:10.5px;color:#8a7a80;line-height:1.6;padding:10px 12px;border:1px solid rgba(0,0,0,.1);border-radius:10px;background:#fff;max-height:140px;overflow-y:auto;animation:hsUp .18s ease both}'
+/* 後払い規約カード(form-plus準拠: タイトル+ピンク本文+「無料」赤字) */
++ '.law-card{margin-left:36px;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.07);animation:hsUp .18s ease both}'
++ '.law-title{font-size:13px;font-weight:700;color:#3a2a30;margin-bottom:8px}'
++ '.law-body{background:#fbe3e1;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.75;color:#4a3a3a}'
++ '.law-red{color:#d63030;font-weight:700}'
+/* 支払い方法の全幅行ボタン(form-plus風) */
++ '.choices-pay{flex-direction:column;align-items:stretch;margin-right:12px}'
++ '.choices-pay .ch{width:100%;white-space:normal;text-align:center;padding:12px 14px;border-radius:12px}'
 /* カウントダウンバー(form-plus風の緊急性演出) */
 + '.cdbar{background:#fff3e6;border-bottom:1px solid #f5ddc0;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}'
 + '.cd-label{font-size:11px;color:#c05020;font-weight:700}'
@@ -923,7 +929,8 @@ function renderChoice(s, i) {
   var it = stepIntro(s);
   if (it) botBubble(it);
   var wrapC = document.createElement('div');
-  wrapC.className = 'choices';
+  /* 支払い方法はform-plus風の全幅行ボタンにする */
+  wrapC.className = s.key === 'payment' ? 'choices choices-pay' : 'choices';
   var choiceList = (s.key === 'payment' && (paymentChoicesFromPage() || CFG.paymentChoices)) || s.choices;
   /* 支払いボタンの表示文言をタグの paymentLabels で差し替え(値はそのまま) */
   if (s.key === 'payment' && CFG.paymentLabels) {
@@ -946,11 +953,15 @@ function renderChoice(s, i) {
       userBubble(c.label, s.key);
       if (!editMode) { doneCount++; progress(); }
       track('step_' + s.key);
-      /* 後払いを選んだら規約・注意文を表示(タグの codNotice。空文字にすれば非表示) */
+      /* 後払いを選んだら規約・注意文を表示(タグの codNotice。空文字にすれば非表示)。
+         デザインはform-plus準拠: 「利用規約」タイトル+ピンク本文+「無料」赤字 */
       if (s.key === 'payment' && c.label.indexOf('後払い') >= 0 && CFG.codNotice) {
         var nb = document.createElement('div');
-        nb.className = 'law-box';
-        nb.innerHTML = esc(CFG.codNotice).replace(/\n/g, '<br>');
+        nb.className = 'law-card';
+        nb.innerHTML = '<div class="law-title">利用規約</div>'
+          + '<div class="law-body">'
+          + esc(CFG.codNotice).replace(/\n/g, '<br>').replace(/：無料/g, '：<span class="law-red">無料</span>')
+          + '</div>';
         msgsEl.appendChild(nb); scrollBottom();
       }
       /* 会員(登録済みメール)の場合はログイン導線を出す */

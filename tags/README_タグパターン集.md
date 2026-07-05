@@ -147,3 +147,14 @@ avatar: '',   /* 💬絵文字に戻す場合 */
 ```
 ヘッダーと吹き出し横に丸く表示される。チャット内の画像はどんなサイズを入れても
 最大高さ280pxに自動フィットする(v3.15.0〜)ので、画像サイズは気にしなくてよい。
+
+## カラーテーマ(LP個別・push不要)
+
+```js
+/* 現行ピンク(既定) */
+theme: { brand: '#C8869A', brandDark: '#a86880', brandLight: '#f9f1f4' },
+
+/* as29(form-plus)風ブラウン */
+theme: { brand: '#6f4c39', brandDark: '#573a2b', brandLight: '#f6f2ee' },
+```
+brand=ヘッダー/ボタン/自分の吹き出し、brandDark=ホバー/プログレスバー、brandLight=チャット背景。
