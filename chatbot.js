@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.1.1
+    HugSkin 獲得チャットボット v3.2.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -246,6 +246,8 @@ var current = 0;
 var doneCount = 0;
 var started = false;
 var interacted = false;    // 一度でも操作したか（モバイルでの勝手なキーボード起動防止）
+var editMode = false;      // 確認画面からの「その項目だけ修正」中か
+var editReturned = false;  // 修正から確認画面に戻ってきた直後か（メッセージ切替用）
 var totalInput = steps.filter(function (s) {
   return s.type === 'fields' || s.type === 'zip' || s.type === 'choice';
 }).length;
@@ -319,6 +321,9 @@ var CSS = ''
 + '.sum td:first-child{color:#9a7a85;width:92px;white-space:nowrap}'
 + '.sum td:last-child{color:#3a2a30;font-weight:500}'
 + '.sum tr:last-child td{border-bottom:none}'
++ '.sum tr[data-k]{cursor:pointer}'
++ '.sum tr[data-k]:active td{background:#faf3f6}'
++ '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
 + '.sum .go{width:calc(100% - 20px);margin:10px}';
 
 var host = document.createElement('div');
@@ -465,6 +470,58 @@ function startFlow() {
   runStep(0);
 }
 
+/* key(項目キー or ステップキー)からステップindexを引く */
+function stepIndexByKey(key) {
+  for (var i = 0; i < steps.length; i++) {
+    var s = steps[i];
+    if (s.key === key) return i;
+    if (s.type === 'fields') {
+      for (var j = 0; j < s.fields.length; j++) if (s.fields[j].key === key) return i;
+    }
+  }
+  return -1;
+}
+function summaryIndex() {
+  for (var i = 0; i < steps.length; i++) if (steps[i].type === 'summary') return i;
+  return steps.length;
+}
+
+/* ステップ完了後の遷移。通常は次へ、修正モードなら確認画面へ直帰する。
+   例外: 郵便番号を修正した時は住所確認ステップを挟んでから確認画面へ戻る */
+function next(i) {
+  var s = steps[i];
+  if (editMode) {
+    if (s.type === 'zip') {
+      ['pref', 'addr1', 'addr2'].forEach(function (k) {
+        if (prefill[k] == null && answers[k] != null) prefill[k] = answers[k];
+      });
+      runStep(stepIndexByKey('addr1'));
+      return;
+    }
+    editMode = false;
+    editReturned = true;
+    runStep(summaryIndex());
+    return;
+  }
+  runStep(i + 1);
+}
+
+/* 確認画面の行タップ → その項目のステップだけ再表示(現在値プリフィル) */
+function startEdit(key) {
+  var idx = stepIndexByKey(key);
+  if (idx < 0) return;
+  editMode = true;
+  var s = steps[idx];
+  if (s.type === 'fields') {
+    s.fields.forEach(function (f) { if (answers[f.key] != null) prefill[f.key] = answers[f.key]; });
+  }
+  if (s.type === 'zip' && answers.zip) prefill.zip = answers.zip;
+  var sumEl = msgsEl.querySelector('.sum');
+  if (sumEl) sumEl.remove();
+  track('edit_' + key);
+  runStep(idx);
+}
+
 async function runStep(i) {
   current = i;
   if (i >= steps.length) return;
@@ -537,8 +594,9 @@ function renderChoice(s, i) {
       answers[s.key] = c.value;
       answers[s.key + '_label'] = c.label;
       userBubble(c.label);
-      doneCount++; progress(); track('step_' + s.key);
-      runStep(i + 1);
+      if (!editMode) { doneCount++; progress(); }
+      track('step_' + s.key);
+      next(i);
     });
     wrapC.appendChild(b);
   });
@@ -599,8 +657,9 @@ function renderFields(s, i) {
       if (x.v) shown.push(x.f.displayAs || x.v);
     });
     userBubble(shown.join('　'));
-    doneCount++; progress(); track('step_' + s.key);
-    runStep(i + 1);
+    if (!editMode) { doneCount++; progress(); }
+    track('step_' + s.key);
+    next(i);
   });
 
   var inputs = card.querySelectorAll('input,select');
@@ -627,6 +686,7 @@ function renderZip(s, i) {
 
   var goBtn = card.querySelector('.go');
   var zipIn = card.querySelector('#zipin');
+  if (prefill.zip != null) { zipIn.value = prefill.zip; delete prefill.zip; }
 
   goBtn.addEventListener('click', async function () {
     clearErrors();
@@ -647,14 +707,15 @@ function renderZip(s, i) {
 
     clearCards();
     userBubble('〒' + z.slice(0, 3) + '-' + z.slice(3));
-    doneCount++; progress(); track('step_zip');
+    if (!editMode) { doneCount++; progress(); }
+    track('step_zip');
 
     if (found) {
       prefill.pref = found.pref;
       prefill.addr1 = found.city;
       botBubble('「' + found.pref + found.city + '」ですね！\n番地・建物名をご入力ください✨');
     }
-    runStep(i + 1);
+    next(i);
   });
   zipIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); goBtn.click(); } });
   maybeFocus(zipIn);
@@ -662,22 +723,30 @@ function renderZip(s, i) {
 
 async function renderSummary(s) {
   progress();
-  botBubble(s.msg);
+  botBubble(editReturned
+    ? '修正を反映しました✅\nもう一度ご確認ください\n（行をタップするとその項目だけ修正できます）'
+    : s.msg + '\n（行をタップするとその項目だけ修正できます）');
+  editReturned = false;
   var rows = '';
   ['name_last', 'name_first', 'kana_last', 'kana_first', 'email', 'tel', 'password', 'sex', 'birthdate', 'zip', 'pref', 'addr1', 'addr2'].forEach(function (k) {
     if (!answers[k]) return;
     var v = k === 'password' ? '••••••••' : answers[k];
     if (k === 'zip') v = '〒' + v.slice(0, 3) + '-' + v.slice(3);
     if (k === 'sex') v = answers.sex_label || v;
-    rows += '<tr><td>' + LABELS[k] + '</td><td>' + esc(v) + '</td></tr>';
+    rows += '<tr data-k="' + k + '"><td>' + LABELS[k] + '</td><td>' + esc(v) + '</td><td class="ed">✎</td></tr>';
   });
-  if (answers.payment_label) rows += '<tr><td>' + LABELS.payment + '</td><td>' + esc(answers.payment_label) + '</td></tr>';
+  if (answers.payment_label) rows += '<tr data-k="payment"><td>' + LABELS.payment + '</td><td>' + esc(answers.payment_label) + '</td><td class="ed">✎</td></tr>';
 
   var card = document.createElement('div');
   card.className = 'sum';
   card.innerHTML = '<table>' + rows + '</table><button class="go">' + esc(s.submitLabel || '注文フォームへ進む →') + '</button>';
   msgsEl.appendChild(card); scrollBottom();
   track('summary_view');
+  /* 行タップ → その項目だけ修正 */
+  card.querySelector('table').addEventListener('click', function (e) {
+    var tr = e.target && e.target.closest ? e.target.closest('tr[data-k]') : null;
+    if (tr) startEdit(tr.getAttribute('data-k'));
+  });
   card.querySelector('.go').addEventListener('click', function () {
     this.textContent = '転送中…'; this.disabled = true;
     transfer();
