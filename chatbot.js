@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.14.0
+    HugSkin 獲得チャットボット v3.15.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -67,6 +67,8 @@ var DEFAULTS = {
   },
   title: 'お申し込みサポート',
   subtitle: 'かんたん注文チャット（約1分）',
+  /* オペレーター(アバター)画像。ヘッダーと吹き出し横に表示。''にすると💬絵文字 */
+  avatar: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/operator.png',
   launcher: true,                  // false = 右下のフローティングバナー(ランチャー)を出さない
   launcherText: '💬 かんたん注文はこちら',   // バナーの文言(自由に変更可)
   launcherImage: '',               // バナーを画像にする場合のURL(指定すると文字の代わりに画像バナーになる)
@@ -422,6 +424,11 @@ var CSS = ''
 + '.ub-ed{color:' + CFG.theme.brand + ';font-size:12px;opacity:.6;margin-bottom:4px;flex-shrink:0}'
 + '.bb img{max-width:100%;border-radius:8px;display:block}'
 + '.img-bb{max-width:88%;padding:4px;background:#fff;border-radius:3px 12px 12px 12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}'
+/* チャット内画像はどんなサイズを入れても自動フィット(最大高さ280px・比率維持) */
++ '.img-bb img{max-width:100%;max-height:280px;width:auto;height:auto;border-radius:8px;display:block}'
+/* オペレーター(アバター)画像 */
++ '.av,.hd-av{overflow:hidden}'
++ '.av img,.hd-av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}'
 + '.typing{background:#fff;border-radius:3px 12px 12px 12px;padding:11px 14px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;gap:5px;align-items:center}'
 + '.dot{width:6px;height:6px;border-radius:50%;background:#c8a0b0;animation:hsBlink 1.1s infinite}'
 + '.dot:nth-child(2){animation-delay:.18s}.dot:nth-child(3){animation-delay:.36s}'
@@ -512,7 +519,7 @@ function buildChat(container, withClose) {
   container.innerHTML = ''
     + cdHtml
     + '<div class="hd">'
-    +   '<div class="hd-av">💬</div>'
+    +   avHtml('hd-av')
     +   '<div><div class="hd-name">' + CFG.title + '</div><div class="hd-sub">' + CFG.subtitle + '</div></div>'
     +   (withClose ? '<button class="hd-close" aria-label="閉じる">×</button>' : '')
     + '</div>'
@@ -637,10 +644,16 @@ function esc(s) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
+/* アバターHTML: CFG.avatar に画像URLがあれば画像、無ければ💬 */
+function avHtml(cls) {
+  return CFG.avatar
+    ? '<div class="' + cls + '"><img src="' + esc(CFG.avatar) + '" alt=""></div>'
+    : '<div class="' + cls + '">💬</div>';
+}
 function botBubble(text) {
   var row = document.createElement('div');
   row.className = 'row';
-  row.innerHTML = '<div class="av">💬</div><div class="bb bot">' + esc(tpl(text)).replace(/\n/g, '<br>') + '</div>';
+  row.innerHTML = avHtml('av') + '<div class="bb bot">' + esc(tpl(text)).replace(/\n/g, '<br>') + '</div>';
   msgsEl.appendChild(row); scrollBottom();
 }
 /* editKey を渡すと、その回答バブルはタップで「その質問だけ修正」できる */
@@ -655,7 +668,7 @@ function userBubble(text, editKey) {
 function typing() {
   var row = document.createElement('div');
   row.className = 'row';
-  row.innerHTML = '<div class="av">💬</div><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+  row.innerHTML = avHtml('av') + '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
   msgsEl.appendChild(row); scrollBottom();
   return row;
 }
@@ -796,9 +809,9 @@ async function runStepInner(i) {
     var row = document.createElement('div');
     row.className = 'row';
     if (CFG.opening.stockGifUrl) {
-      row.innerHTML = '<div class="av">💬</div><div class="img-bb"><img src="' + esc(CFG.opening.stockGifUrl) + '" alt=""></div>';
+      row.innerHTML = avHtml('av') + '<div class="img-bb"><img src="' + esc(CFG.opening.stockGifUrl) + '" alt=""></div>';
     } else {
-      row.innerHTML = '<div class="av">💬</div><div class="stock"><div class="spin"></div><span>' + esc(tpl(CFG.opening.stockTextChecking)) + '</span></div>';
+      row.innerHTML = avHtml('av') + '<div class="stock"><div class="spin"></div><span>' + esc(tpl(CFG.opening.stockTextChecking)) + '</span></div>';
     }
     msgsEl.appendChild(row); scrollBottom();
     await delay(900);
@@ -847,7 +860,7 @@ async function runStepInner(i) {
 function imgBubble(src) {
   var row = document.createElement('div');
   row.className = 'row';
-  row.innerHTML = '<div class="av">💬</div><div class="img-bb"><img src="' + esc(src) + '" alt=""></div>';
+  row.innerHTML = avHtml('av') + '<div class="img-bb"><img src="' + esc(src) + '" alt=""></div>';
   msgsEl.appendChild(row); scrollBottom();
 }
 
@@ -1177,25 +1190,37 @@ function renderAddress(s, i) {
       '<div class="fld"><label>郵便番号（ハイフン不要）</label>'
     + '<input id="ad-zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例：1500001">'
     + '<button type="button" class="zip-search">郵便番号から住所を検索</button></div>'
+    /* ▼住所以下は郵便番号を入れるまで隠しておく(form-plusと同じ段階表示) */
+    + '<div id="ad-rest" style="display:none">'
     + '<div class="fld"><label>都道府県</label><select id="ad-pref" autocomplete="address-level1">' + prefOpts + '</select></div>'
     + '<div class="fld"><label>市区町村</label><input id="ad-city" type="text" placeholder="例：渋谷区神宮前"></div>'
     + '<div class="fld"><label>番地・建物名など</label><input id="ad-banchi" type="text" placeholder="例：1-2-3 ハグスキンマンション201"></div>'
     + '<div class="fld"><label>電話番号（ハイフン不要）</label>'
     + '<input id="ad-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="例：09012345678"></div>'
-    + '<button class="go">次へ →</button>';
+    + '<button class="go">次へ →</button>'
+    + '</div>';
   msgsEl.appendChild(card); scrollBottom();
 
   var zipIn = card.querySelector('#ad-zip'), prefSel = card.querySelector('#ad-pref');
   var cityIn = card.querySelector('#ad-city'), banchiIn = card.querySelector('#ad-banchi');
   var telIn = card.querySelector('#ad-tel');
   var searchBtn = card.querySelector('.zip-search');
+  var restEl = card.querySelector('#ad-rest');
 
-  /* 修正時のプリフィル */
-  if (prefill.zip)   { zipIn.value = prefill.zip; delete prefill.zip; }
-  if (prefill.pref)  { prefSel.value = prefill.pref; delete prefill.pref; }
-  if (prefill.addr1) { cityIn.value = prefill.addr1; delete prefill.addr1; }
-  if (prefill.addr2) { banchiIn.value = prefill.addr2; delete prefill.addr2; }
-  if (prefill.tel)   { telIn.value = prefill.tel; delete prefill.tel; }
+  var revealed = false;
+  function reveal(focusTarget) {
+    if (!revealed) { revealed = true; restEl.style.display = ''; scrollBottom(); }
+    if (focusTarget && interacted) setTimeout(function () { focusTarget.focus(); }, 80);
+  }
+
+  /* 修正時のプリフィル(既に住所があるなら最初から全部見せる) */
+  var hadPrefill = false;
+  if (prefill.zip)   { zipIn.value = prefill.zip; delete prefill.zip; hadPrefill = true; }
+  if (prefill.pref)  { prefSel.value = prefill.pref; delete prefill.pref; hadPrefill = true; }
+  if (prefill.addr1) { cityIn.value = prefill.addr1; delete prefill.addr1; hadPrefill = true; }
+  if (prefill.addr2) { banchiIn.value = prefill.addr2; delete prefill.addr2; hadPrefill = true; }
+  if (prefill.tel)   { telIn.value = prefill.tel; delete prefill.tel; hadPrefill = true; }
+  if (hadPrefill) reveal();
 
   var searching = false;
   function doSearch() {
@@ -1211,7 +1236,7 @@ function renderAddress(s, i) {
     }).catch(function () {}).then(function () {
       searching = false;
       searchBtn.textContent = '郵便番号から住所を検索';
-      scrollBottom();
+      reveal(banchiIn);   // 検索が終わったら(失敗しても手入力用に)住所欄を開く
     });
   }
   searchBtn.addEventListener('click', doSearch);
