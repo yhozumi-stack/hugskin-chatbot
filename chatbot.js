@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.4.0
+    HugSkin 獲得チャットボット v3.5.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -23,10 +23,12 @@
 var DEFAULTS = {
   scenario: 'standard',            // 使うシナリオ名（SCENARIOS のキー）
   vars: {                          // シナリオ文言に {{KEY}} で差し込まれる変数
-    PRODUCT: 'HugSkin C10 ALL IN SERUM',
-    PRICE:   '初回限定価格',
-    OFFER:   '初回限定',
+    PRODUCT: '',                   // 空ならLPの商品名ブロックから自動取得（連番 _0012 等は自動除去）
+    PRICE:   '',                   // 価格はLPのHTMLに存在しないため自動取得不可。表示したい時だけタグで指定
+    OFFER:   '',
   },
+  /* 文言ルール: {{VAR}} を含む行は、その変数が未設定なら行ごと非表示になる。
+     例: 「ただいま{{PRICE}}でご案内中です」は PRICE 未設定なら丸ごと消える */
   skip: {},                        // 質問せず転記だけする項目（LPごとにタグで設定）
                                    //   例 { tel:'09000000000', password:'auto', birthdate:'1990/01/01' }
                                    //   'auto'=自動生成(password/email) '{RAND}'=ユニーク文字列に置換
@@ -39,7 +41,7 @@ var DEFAULTS = {
     stockCheck: true,              // 「ご案内枠を確認中…」演出のON/OFF
     stockGifUrl: '',               // 演出をGIF画像にしたい場合のURL（空ならスピナー）
     stockTextChecking: '🔍 ご案内枠を確認しています…',
-    stockTextDone: '✅ {{OFFER}}のご案内枠を確保しました！\nこのままお手続きにお進みください',
+    stockTextDone: '✅ ご案内枠を確保しました！\nこのままお手続きにお進みください',
   },
   theme: {
     brand: '#C8869A', brandDark: '#a86880', brandLight: '#f9f1f4',
@@ -79,11 +81,20 @@ function deepMerge(base, over) {
 }
 var CFG = deepMerge(DEFAULTS, window.HS_CHAT || {});
 
-/* {{KEY}} を CFG.vars で置換 */
+/* {{KEY}} を CFG.vars で置換。
+   未設定(空)の変数を含む行は「行ごと」非表示にする — これにより
+   価格未設定のLPでも文言が壊れない(「ただいまでご案内中」みたいにならない) */
 function tpl(s) {
-  return String(s).replace(/\{\{(\w+)\}\}/g, function (_, k) {
-    return (CFG.vars && CFG.vars[k] != null) ? CFG.vars[k] : '';
-  });
+  return String(s).split('\n').filter(function (line) {
+    var ok = true;
+    line.replace(/\{\{(\w+)\}\}/g, function (_, k) {
+      if (!(CFG.vars && CFG.vars[k])) ok = false;
+      return '';
+    });
+    return ok;
+  }).map(function (line) {
+    return line.replace(/\{\{(\w+)\}\}/g, function (_, k) { return CFG.vars[k]; });
+  }).join('\n');
 }
 
 /* ============================================================
@@ -175,8 +186,8 @@ var SCENARIOS = {
       intro: 'カード情報をご入力ください🔒\n（暗号化された注文フォームに反映されます）' },
 
     { type: 'summary',
-      msg: 'ご入力ありがとうございます！\n内容をご確認ください ✅',
-      submitLabel: 'この内容で注文手続きへ進む →' },
+      msg: 'ご入力ありがとうございます！\nご注文内容をご確認ください ✅',
+      submitLabel: 'この内容で注文を確定する →' },
   ],
 
 };
@@ -359,6 +370,7 @@ var CSS = ''
 + '.sum td:first-child{color:#9a7a85;width:92px;white-space:nowrap}'
 + '.sum td:last-child{color:#3a2a30;font-weight:500}'
 + '.sum tr:last-child td{border-bottom:none}'
++ '.sum tr.ro td{background:#fbf7f9;font-weight:600}'
 + '.sum tr[data-k]{cursor:pointer}'
 + '.sum tr[data-k]:active td{background:#faf3f6}'
 + '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
@@ -418,6 +430,9 @@ function closePanel() {
 }
 
 function mount() {
+  /* 商品名が未設定ならLPから自動取得(商品が変わってもタグ・シナリオの修正不要) */
+  if (!CFG.vars.PRODUCT) CFG.vars.PRODUCT = readProductName();
+
   if (CFG.mode === 'inline') {
     var target = document.querySelector(CFG.inlineSelector);
     if (!target) { CFG.mode = 'float'; return mount(); }  // 見つからなければfloatにフォールバック
@@ -655,6 +670,19 @@ function imgBubble(src) {
   row.className = 'row';
   row.innerHTML = '<div class="av">💬</div><div class="img-bb"><img src="' + esc(src) + '" alt=""></div>';
   msgsEl.appendChild(row); scrollBottom();
+}
+
+/* LPの商品名ブロック(ecforce商品設定の表示)から商品名を自動取得。
+   「HugSkin C10 オールインセラム【定期】_0012」→ 末尾の内部連番を除去 */
+function readProductName() {
+  var el = document.querySelector('tr.input_variant_ec .form_group_ec')
+        || document.querySelector('.input_variant_ec .form_group_ec');
+  if (!el) return '';
+  return (el.innerText || '').trim().replace(/\s+/g, ' ').replace(/_\d+$/, '').trim();
+}
+function readQty() {
+  var el = document.querySelector('[name="order[order_items_attributes][][quantity]"]');
+  return el && el.value ? String(el.value) : '';
 }
 
 /* LP内フォームの支払い方法selectから選択肢を自動生成
@@ -954,6 +982,11 @@ async function renderSummary(s) {
     : s.msg + '\n（行をタップするとその項目だけ修正できます）');
   editReturned = false;
   var rows = '';
+  /* ご注文内容(LPから自動取得。商品が変わってもここは自動で追従する) */
+  var prod = CFG.vars.PRODUCT || readProductName();
+  var qty = readQty();
+  if (prod) rows += '<tr class="ro"><td>商品</td><td>' + esc(prod) + (qty && qty !== '1' ? '　× ' + esc(qty) : '') + '</td><td></td></tr>';
+  if (CFG.vars.PRICE) rows += '<tr class="ro"><td>価格</td><td>' + esc(CFG.vars.PRICE) + '</td><td></td></tr>';
   ['name_full', 'kana_full', 'name_last', 'name_first', 'kana_last', 'kana_first', 'email', 'tel', 'password', 'sex', 'birthdate', 'zip', 'pref', 'addr1', 'addr2'].forEach(function (k) {
     if (!answers[k]) return;
     var v = k === 'password' ? '••••••••' : answers[k];
@@ -1107,8 +1140,8 @@ function transfer() {
 
     if (CFG.autoSubmit && !needsConsent) {
       /* 注文ボタンを自動で押して確認画面へ進む(住所再セットの900msを待ってから) */
-      if (sbtn) sbtn.textContent = '手続きへ進んでいます…';
-      botBubble('ありがとうございます！\nご注文手続きへ進みます✨');
+      if (sbtn) sbtn.textContent = '送信しています…';
+      botBubble('ありがとうございます！\nご注文を送信しています✨');
       track('auto_submit');
       setTimeout(function () {
         var submit = localForm.querySelector('input[type=submit], button[type=submit]');

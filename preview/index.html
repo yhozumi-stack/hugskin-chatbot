@@ -33,6 +33,13 @@
   <h2>ご注文フォーム（モック）</h2>
   <p style="font-size:12px;color:#888">チャット完了時にここへ直接入力される(緑枠=入力成功)。実LPのname属性を再現。</p>
   <form action="/lp" method="post" onsubmit="return false" style="display:grid;gap:10px;max-width:480px">
+    <!-- 実LPの商品名ブロックを再現(チャットが自動取得する) -->
+    <table><tr class="input_variant_ec"><td>
+      <p class="form_box_label_ec">商品名 必須</p>
+      <div class="form_group_ec">HugSkin C10 オールインセラム【定期】_0012</div>
+    </td></tr></table>
+    <input type="hidden" name="order[order_items_attributes][][variant_id]" value="23">
+    <input type="hidden" name="order[order_items_attributes][][quantity]" value="1">
     <label>お名前<input name="order[billing_address_attributes][name01]"></label>
     <label>フリガナ<input name="order[billing_address_attributes][kana01]"></label>
     <label>郵便番号<input name="order[billing_address_attributes][zip01]"></label>
@@ -114,11 +121,7 @@
 <script>
 window.HS_CHAT = {
   scenario: 'standard',
-  vars: {
-    PRODUCT: 'HugSkin C10 ALL IN SERUM',
-    PRICE:   '初回限定 1,980円（税込）',
-    OFFER:   '初回限定',
-  },
+  /* vars未指定 → 商品名はLPから自動取得・価格文言の行は自動非表示、のテスト */
   mode: 'float',
   autoOpen: 'immediate',
   opening: { image: '', stockCheck: true, stockGifUrl: '' },

@@ -7,9 +7,8 @@
 window.HS_CHAT = {
   scenario: 'standard',
   vars: {
-    PRODUCT: 'HugSkin C10 ALL IN SERUM',
-    PRICE:   '初回限定 1,980円（税込）',
-    OFFER:   '初回限定',
+    /* 商品名はLPから自動取得されるので書かなくてよい(書けば上書き) */
+    PRICE: '初回限定 1,980円（税込）',   /* 価格は自動取得できないためここで指定。消せば価格文言は非表示になる */
   },
   mode: 'float',
   autoOpen: 'immediate',
