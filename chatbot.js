@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.12.0
+    HugSkin 獲得チャットボット v3.13.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -31,6 +31,17 @@ var DEFAULTS = {
      改行は \n。{{PRODUCT}}{{PRICE}}等の変数も使える
      例: greeting: 'こんにちは！✨\nいまだけ{{PRICE}}です🎁' */
   greeting: '',
+  /* 各質問の文言をタグから上書き(キー=ステップkey)。
+     例: texts: { name: 'お名前をどうぞ！', payment: '最後にお支払い方法を選択してください！' } */
+  texts: {},
+  /* 質問の直前に画像を出す(キー=ステップkey、値=画像URL)。
+     例: stepImages: { payment: 'https://…/payment_promo.png' } */
+  stepImages: {},
+  /* 後払いを選んだ直後に表示する規約・注意文(空なら非表示)。タグで上書き可 */
+  codNotice: '利用規約\n\n払込票は商品とは別に株式会社SCOREより郵送されます。発行から14日以内にコンビニでお支払いください。 代金債権とそれに付帯する個人情報は、包括的な決済サービスを提供する株式会社DGフィナンシャルテクノロジーに譲渡・提供されたうえで、さらに同社から後払い決済サービスを提供する株式会社SCOREに対し、再譲渡・提供されますので、当該第三者への譲渡・提供に同意の上、お申込みください。与信審査の結果により他のお支払い方法をご利用いただく場合もございます。 詳しくは、お支払い方法ページに記載されている【ベリトランス後払い（コンビニ後払い）】で必ず確認してください。 ご利用者が未成年の場合は、法定代理人の利用同意を得てご利用ください。\n個人情報の提供に関する問合せ先：support@hugskin.shop\n●後払い手数料：無料\n●利用限度額：55,000円（税込）',
+  /* カウントダウンバー(緊急性演出)。true か {text:'…'} で有効。
+     毎日23:59:59までの残り時間を表示(日付が変わるとリセット) */
+  countdown: null,
   /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
      例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' } */
   summaryOptions: {},
@@ -407,7 +418,20 @@ var CSS = ''
 + '.sum tr[data-k]{cursor:pointer}'
 + '.sum tr[data-k]:active td{background:#faf3f6}'
 + '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
-+ '.sum .go{width:calc(100% - 20px);margin:10px}';
++ '.sum .go{width:calc(100% - 20px);margin:10px}'
+/* 後払い規約ボックス(チャット内) */
++ '.law-box{margin-left:36px;font-size:10.5px;color:#8a7a80;line-height:1.6;padding:10px 12px;border:1px solid rgba(0,0,0,.1);border-radius:10px;background:#fff;max-height:140px;overflow-y:auto;animation:hsUp .18s ease both}'
+/* カウントダウンバー(form-plus風の緊急性演出) */
++ '.cdbar{background:#fff3e6;border-bottom:1px solid #f5ddc0;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}'
++ '.cd-label{font-size:11px;color:#c05020;font-weight:700}'
++ '.cd-time{font-size:11.5px;color:#fff;background:#e05a3a;border-radius:6px;padding:3px 8px;font-weight:700;white-space:nowrap}'
+/* 確認画面モーダル(form-plus風) */
++ '.modal-ov{position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;padding:14px;animation:hsIn .18s ease both}'
++ '.modal-card{background:#fff;border-radius:14px;flex:1;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.3)}'
++ '.modal-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:14px;font-weight:700;color:#3a2a30;border-bottom:1px solid rgba(0,0,0,.08);flex-shrink:0}'
++ '.modal-x{background:none;border:none;font-size:20px;color:#9a8a90;cursor:pointer;line-height:1;padding:2px 6px}'
++ '.modal-card .sum{margin:0;border:none;border-radius:0;box-shadow:none;overflow-y:auto;flex:1;animation:none}'
++ '.inline-box{position:relative}';
 
 var host = document.createElement('div');
 host.id = 'hs-chat-host';
@@ -423,7 +447,14 @@ root.appendChild(wrap);
 var panelEl = null, launcherEl = null, msgsEl = null, pgFill = null;
 
 function buildChat(container, withClose) {
+  /* カウントダウンバー(タグの countdown で有効化。毎日23:59:59まで=日次リセット) */
+  var cdHtml = '';
+  if (CFG.countdown) {
+    var cdText = (CFG.countdown && CFG.countdown.text) || 'お急ぎください！本日受付終了まで';
+    cdHtml = '<div class="cdbar"><span class="cd-label">' + esc(cdText) + '</span><span class="cd-time">--:--:--</span></div>';
+  }
   container.innerHTML = ''
+    + cdHtml
     + '<div class="hd">'
     +   '<div class="hd-av">💬</div>'
     +   '<div><div class="hd-name">' + CFG.title + '</div><div class="hd-sub">' + CFG.subtitle + '</div></div>'
@@ -433,6 +464,18 @@ function buildChat(container, withClose) {
     + '<div class="msgs"></div>';
   msgsEl = container.querySelector('.msgs');
   pgFill = container.querySelector('.pg-fill');
+  var cdTime = container.querySelector('.cd-time');
+  if (cdTime) {
+    var tick = function () {
+      var now = new Date();
+      var end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      var s = Math.max(0, Math.floor((end - now) / 1000));
+      var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      cdTime.textContent = 'あと' + h + '時間' + ('0' + m).slice(-2) + '分' + ('0' + sec).slice(-2) + '秒';
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
   var close = container.querySelector('.hd-close');
   if (close) close.addEventListener('click', closePanel);
   container.addEventListener('pointerdown', function () { interacted = true; }, true);
@@ -656,8 +699,8 @@ function startEdit(key) {
       if (answers[k] != null) prefill[k] = answers[k];
     });
   }
-  var sumEl = msgsEl.querySelector('.sum');
-  if (sumEl) sumEl.remove();
+  /* 確認画面(通常カード/モーダルどちらも)を消してから再質問する */
+  wrap.querySelectorAll('.sum, .modal-ov').forEach(function (el) { el.remove(); });
   clearCards();  // 表示中の質問カードも一旦引っ込める(修正後に再表示される)
   track('edit_' + key);
   runStep(idx);
@@ -721,6 +764,9 @@ async function runStepInner(i) {
   }
 
   /* --- 入力系 --- */
+  /* 質問の直前に画像(タグの stepImages で指定)を出す */
+  if (CFG.stepImages && CFG.stepImages[s.key]) imgBubble(CFG.stepImages[s.key]);
+
   var t = typing(); await delay(CFG.typingMs); t.remove();
 
   if (!editMode) pendingIdx = i;   // 修正中でなければ「いまの質問」を記録
@@ -737,6 +783,11 @@ function imgBubble(src) {
   row.className = 'row';
   row.innerHTML = '<div class="av">💬</div><div class="img-bb"><img src="' + esc(src) + '" alt=""></div>';
   msgsEl.appendChild(row); scrollBottom();
+}
+
+/* 質問文: タグの texts[ステップkey] があればそれを優先(LP個別の文言上書き) */
+function stepIntro(s) {
+  return (CFG.texts && CFG.texts[s.key]) || s.intro;
 }
 
 /* LPの商品名ブロック(ecforce商品設定の表示)から商品名を自動取得。
@@ -767,7 +818,9 @@ function readOrderSummary() {
     product: qaText('product_name').replace(/_\d+$/, '').trim(),
     unit: qaText('product_price'),
     qty: qaText('product_quantity'),
+    subtotal: qaText('subtotal'),
     ship: qaText('deliv_fee'),
+    charge: qaText('charge'),
     tax: qaText('tax'),
     total: total,
     caution: qaText('caution'),
@@ -788,7 +841,7 @@ function paymentChoicesFromPage() {
 }
 
 function renderChoice(s, i) {
-  botBubble(s.intro);
+  botBubble(stepIntro(s));
   var wrapC = document.createElement('div');
   wrapC.className = 'choices';
   var choiceList = (s.key === 'payment' && (paymentChoicesFromPage() || CFG.paymentChoices)) || s.choices;
@@ -803,6 +856,13 @@ function renderChoice(s, i) {
       userBubble(c.label, s.key);
       if (!editMode) { doneCount++; progress(); }
       track('step_' + s.key);
+      /* 後払いを選んだら規約・注意文を表示(タグの codNotice。空文字にすれば非表示) */
+      if (s.key === 'payment' && c.label.indexOf('後払い') >= 0 && CFG.codNotice) {
+        var nb = document.createElement('div');
+        nb.className = 'law-box';
+        nb.innerHTML = esc(CFG.codNotice).replace(/\n/g, '<br>');
+        msgsEl.appendChild(nb); scrollBottom();
+      }
       /* 会員(登録済みメール)の場合はログイン導線を出す */
       if (s.key === 'first_time' && c.value === 'member') {
         return renderLoginGuide(s.memberMsg, function () { next(i); });
@@ -865,7 +925,7 @@ function fieldInputHtml(f, idx) {
 }
 
 function renderFields(s, i) {
-  botBubble(s.intro);
+  botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
   var inner = s.fields.map(function (f, idx) {
@@ -934,7 +994,7 @@ function renderFields(s, i) {
 /* 生年月日カード: 年/月/日の数字リストが最初から見えるスクロール選択式。
    年はdefaultYear(1992)が選択済み+リスト中央に表示。月と日を選ぶと自動で次へ進む */
 function renderBirth(s, i) {
-  botBubble(s.intro);
+  botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
   card.innerHTML =
@@ -1001,7 +1061,7 @@ function renderBirth(s, i) {
    ⚠️ カード情報は確認画面ではマスク表示、リダイレクトモードでは絶対に送らない。
    LP内フォームのカード欄(VeriTrans)に直接転記するだけで、外部送信は一切しない。 */
 function renderCard(s, i) {
-  botBubble(s.intro);
+  botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
   /* 有効期限の年: LP実フォームのselect(下2桁)から選択肢を拝借、無ければ生成 */
@@ -1090,7 +1150,7 @@ function attachEmailSuggest(inp) {
 }
 
 function renderZip(s, i) {
-  botBubble(s.intro);
+  botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
   card.innerHTML = '<div class="fld"><label>郵便番号（ハイフン不要）</label>'
@@ -1178,8 +1238,11 @@ async function renderSummary(s) {
   if (os) {
     if (os.product) rows += '<tr class="ro"><td>商品</td><td>' + esc(os.product) + '</td><td></td></tr>';
     if (os.unit) rows += '<tr class="ro"><td>単価</td><td>' + esc(os.unit) + (os.qty ? '　× ' + esc(os.qty) : '') + '</td><td></td></tr>';
+    if (os.subtotal) rows += '<tr class="ro"><td>小計</td><td>' + esc(os.subtotal) + '</td><td></td></tr>';
     if (os.ship) rows += '<tr class="ro"><td>送料</td><td>' + esc(os.ship) + '</td><td></td></tr>';
-    rows += '<tr class="ro tot"><td>合計</td><td>' + esc(os.total) + (os.tax ? '（うち消費税 ' + esc(os.tax) + '）' : '') + '</td><td></td></tr>';
+    if (os.charge) rows += '<tr class="ro"><td>手数料</td><td>' + esc(os.charge) + '</td><td></td></tr>';
+    if (os.tax) rows += '<tr class="ro"><td>消費税</td><td>' + esc(os.tax) + '</td><td></td></tr>';
+    rows += '<tr class="ro tot"><td>合計</td><td>' + esc(os.total) + '</td><td></td></tr>';
   } else {
     /* テーブルが無いLPでは従来のフォールバック表示 */
     var prod = CFG.vars.PRODUCT || readProductName();
@@ -1208,12 +1271,37 @@ async function renderSummary(s) {
        タグで summaryOptions: { showLaw: false } にすると非表示にできる) */
     + (os && os.caution && so.showLaw !== false ? '<div class="law">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
     + '<button class="go">' + esc(so.submitLabel || s.submitLabel || '注文フォームへ進む →') + '</button>';
-  msgsEl.appendChild(card); scrollBottom();
-  /* 確認カードは高さがあるため、描画後にもう一度確実にスクロールする(見落とし防止) */
-  setTimeout(function () {
-    scrollBottom();
-    try { card.scrollIntoView({ block: 'end' }); } catch (e) {}
-  }, 400);
+
+  if (so.modal) {
+    /* form-plus風: チャット窓に重なるモーダルで確認画面を出す
+       (タグで summaryOptions: { modal: true }) */
+    var container = msgsEl.parentElement;
+    var ov = document.createElement('div');
+    ov.className = 'modal-ov';
+    var mc = document.createElement('div');
+    mc.className = 'modal-card';
+    mc.innerHTML = '<div class="modal-hd"><span>ご注文内容の確認</span><button class="modal-x" aria-label="閉じる">×</button></div>';
+    mc.appendChild(card);
+    ov.appendChild(mc);
+    container.appendChild(ov);
+    mc.querySelector('.modal-x').addEventListener('click', function () { ov.remove(); });
+    /* チャット側には再オープン用ボタンを置いておく(✕で閉じた時用) */
+    var reW = document.createElement('div');
+    reW.className = 'choices';
+    var reB = document.createElement('button');
+    reB.className = 'ch';
+    reB.textContent = 'ご注文内容を確認する →';
+    reB.addEventListener('click', function () { container.appendChild(ov); });
+    reW.appendChild(reB);
+    msgsEl.appendChild(reW); scrollBottom();
+  } else {
+    msgsEl.appendChild(card); scrollBottom();
+    /* 確認カードは高さがあるため、描画後にもう一度確実にスクロールする(見落とし防止) */
+    setTimeout(function () {
+      scrollBottom();
+      try { card.scrollIntoView({ block: 'end' }); } catch (e) {}
+    }, 400);
+  }
   track('summary_view');
   /* 行タップ → その項目だけ修正 */
   card.querySelector('table').addEventListener('click', function (e) {
@@ -1352,7 +1440,7 @@ function transfer() {
       if (window.clarity) window.clarity('event', 'hs_chat_error');
     } catch (e2) {}
     botBubble('申し訳ありません、転記中にエラーが発生しました🙏\nお手数ですが、下のフォームから直接ご注文いただくか、\nページを再読み込みしてもう一度お試しください');
-    var sbtn = msgsEl.querySelector('.sum .go');
+    var sbtn = wrap.querySelector('.sum .go');
     if (sbtn) { sbtn.disabled = false; sbtn.textContent = 'もう一度試す →'; }
   }
 }
@@ -1367,7 +1455,7 @@ function transferInner() {
        未転記(リダイレクト設定変更等)の場合のみ通常転記 */
     if (!prefilled) fillLocalForm(localForm);
     track('fill_local');
-    var sbtn = msgsEl.querySelector('.sum .go');
+    var sbtn = wrap.querySelector('.sum .go');
 
     /* 後払いで同意チェックが表示されている場合は自動送信せず、チェックをお願いする */
     var consentEl = localForm.querySelector('[name="order[payment_attributes][source_attributes][consent]"]');
