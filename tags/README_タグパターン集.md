@@ -88,6 +88,31 @@ greeting: 'こんにちは！✨\nいまだけ{{PRICE}}でご案内中です🎁
 ```
 ※挨拶以外の質問文・ボタン文言を変えたい時は chatbot.js の SCENARIOS を編集(CLAUDE.mdレシピ12、Sonnetで可)
 
+## form-plus風の演出(v3.13.0〜、全部タグで完結)
+
+```js
+/* 確認画面をモーダル化(✕で閉じる/再オープン/行タップ修正対応) */
+summaryOptions: { modal: true },
+
+/* カウントダウンバー(毎日23:59:59まで・日次リセット) */
+countdown: true,
+countdown: { text: 'お急ぎください！本日受付終了まで' },   /* 文言を変える場合 */
+
+/* 各質問の文言上書き(キー= name/contact/password/sex/birthdate/zip/addr/payment/card) */
+texts: {
+  name: 'まず、お名前を教えてください',
+  payment: '最後にお支払い方法を選択してください！',
+},
+
+/* 質問の直前に画像(クレカ訴求など) */
+stepImages: {
+  payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+},
+
+/* 後払い選択後の規約文(既定でSCORE/DGFTの文面入り。空文字で非表示) */
+codNotice: '',   /* ←消す場合。変える場合は文章をそのまま書く(改行は\n) */
+```
+
 ## その他よく使うもの
 
 ```js
