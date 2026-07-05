@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.10.0
+    HugSkin 獲得チャットボット v3.11.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -27,6 +27,9 @@ var DEFAULTS = {
     PRICE:   '',                   // 価格はLPのHTMLに存在しないため自動取得不可。表示したい時だけタグで指定
     OFFER:   '',
   },
+  /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
+     例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' } */
+  summaryOptions: {},
   /* 文言ルール: {{VAR}} を含む行は、その変数が未設定なら行ごと非表示になる。
      例: 「ただいま{{PRICE}}でご案内中です」は PRICE 未設定なら丸ごと消える */
   skip: {},                        // 質問せず転記だけする項目（LPごとにタグで設定）
@@ -38,6 +41,7 @@ var DEFAULTS = {
   autoOpen: 'immediate',           // 'immediate' / 'scroll30'(30%スクロールで) / 'delay3000'(3秒後) / 'manual'
   opening: {
     image: '',                     // 冒頭に出す画像URL（空なら出さない）
+    images: null,                  // 冒頭画像を複数枚出す場合の配列 例: ['url1','url2'] (上から順に表示)
     stockCheck: true,              // 「ご案内枠を確認中…」演出のON/OFF
     stockGifUrl: '',               // 演出をGIF画像にしたい場合のURL（空ならスピナー）
     stockTextChecking: '🔍 ご案内枠を確認しています…',
@@ -50,6 +54,7 @@ var DEFAULTS = {
   subtitle: 'かんたん注文チャット（約1分）',
   launcher: true,                  // false = 右下のフローティングバナー(ランチャー)を出さない
   launcherText: '💬 かんたん注文はこちら',   // バナーの文言(自由に変更可)
+  launcherImage: '',               // バナーを画像にする場合のURL(指定すると文字の代わりに画像バナーになる)
   /* LP内の既存ボタンをチャット起動ボタンにするCSSセレクタ(LPのHTML編集不要)。
      例: openTriggers: 'a[href="#order"], .cta_btn'
      → そのボタンのクリックでチャットが開く(元のリンク動作はキャンセルされる) */
@@ -318,6 +323,8 @@ var CSS = ''
 + 'font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.22);'
 + 'animation:hsPulse 2.4s infinite}'
 + '@keyframes hsPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}'
++ '.launcher.launcher-img{background:none;padding:0;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.25)}'
++ '.launcher.launcher-img img{display:block;max-width:min(220px,60vw);height:auto}'
 + '.panel{position:fixed;bottom:12px;right:12px;z-index:2147483001;width:min(400px,calc(100vw - 16px));'
 + 'height:min(620px,calc(100dvh - 24px));display:flex;flex-direction:column;background:' + CFG.theme.brandLight + ';'
 + 'border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.28);'
@@ -469,8 +476,15 @@ function mount() {
   document.body.appendChild(host);
   if (CFG.launcher !== false) {
     launcherEl = document.createElement('button');
-    launcherEl.className = 'launcher';
-    launcherEl.textContent = CFG.launcherText;
+    if (CFG.launcherImage) {
+      /* 画像バナー */
+      launcherEl.className = 'launcher launcher-img';
+      launcherEl.innerHTML = '<img src="' + esc(CFG.launcherImage) + '" alt="' + esc(CFG.launcherText || 'かんたん注文') + '">';
+    } else {
+      /* 文字バナー */
+      launcherEl.className = 'launcher';
+      launcherEl.textContent = CFG.launcherText;
+    }
     launcherEl.addEventListener('click', function () { interacted = true; openPanel(); });
     wrap.appendChild(launcherEl);
   }
@@ -680,7 +694,10 @@ async function runStepInner(i) {
     return runStep(i + 1);
   }
   if (s.type === 'openingImage') {
-    if (CFG.opening.image) imgBubble(CFG.opening.image);
+    /* 冒頭画像: images(配列)があれば順に、なければimage(1枚)を表示 */
+    var imgs = CFG.opening.images && CFG.opening.images.length ? CFG.opening.images
+             : (CFG.opening.image ? [CFG.opening.image] : []);
+    imgs.forEach(function (src) { imgBubble(src); });
     return runStep(i + 1);
   }
   if (s.type === 'image') {
@@ -1121,9 +1138,12 @@ function renderZip(s, i) {
 
 async function renderSummary(s) {
   progress();
-  /* 口上は出さず、いきなり最終確認カードを表示する(s.msgを設定した場合のみ発話) */
+  /* タグの summaryOptions でシナリオ設定を上書きできる(LP個別・push不要) */
+  var so = CFG.summaryOptions || {};
+  var sumMsg = so.msg != null ? so.msg : s.msg;
+  /* 口上は出さず、いきなり最終確認カードを表示する(msgを設定した場合のみ発話) */
   if (editReturned) botBubble('修正を反映しました✅');
-  else if (s.msg) botBubble(s.msg);
+  else if (sumMsg) botBubble(sumMsg);
   editReturned = false;
 
   /* 確認画面を出す前にLPフォームへ先に転記する。
@@ -1146,8 +1166,9 @@ async function renderSummary(s) {
   }
   var rows = '';
   /* ご注文内容: ecforceの注文内容テーブル(qa-*)から自動取得。
-     商品・価格・オファーが変わってもタグ/シナリオの修正なしで追従する */
-  var os = readOrderSummary();
+     商品・価格・オファーが変わってもタグ/シナリオの修正なしで追従する
+     (タグで summaryOptions: { showOrderInfo: false } にすると非表示にできる) */
+  var os = so.showOrderInfo === false ? null : readOrderSummary();
   if (os) {
     if (os.product) rows += '<tr class="ro"><td>商品</td><td>' + esc(os.product) + '</td><td></td></tr>';
     if (os.unit) rows += '<tr class="ro"><td>単価</td><td>' + esc(os.unit) + (os.qty ? '　× ' + esc(os.qty) : '') + '</td><td></td></tr>';
@@ -1177,9 +1198,10 @@ async function renderSummary(s) {
   var card = document.createElement('div');
   card.className = 'sum';
   card.innerHTML = '<table>' + rows + '</table>'
-    /* 特商法・定期条件の注意喚起(ecforceのqa-cautionを転記。最終確認画面の表示義務対応) */
-    + (os && os.caution ? '<div class="law">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
-    + '<button class="go">' + esc(s.submitLabel || '注文フォームへ進む →') + '</button>';
+    /* 特商法・定期条件の注意喚起(ecforceのqa-cautionを転記。最終確認画面の表示義務対応。
+       タグで summaryOptions: { showLaw: false } にすると非表示にできる) */
+    + (os && os.caution && so.showLaw !== false ? '<div class="law">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
+    + '<button class="go">' + esc(so.submitLabel || s.submitLabel || '注文フォームへ進む →') + '</button>';
   msgsEl.appendChild(card); scrollBottom();
   /* 確認カードは高さがあるため、描画後にもう一度確実にスクロールする(見落とし防止) */
   setTimeout(function () {

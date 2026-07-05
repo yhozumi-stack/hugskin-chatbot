@@ -11,8 +11,15 @@ window.HS_CHAT = {
     PRICE: '2,980円（税込）',   /* 挨拶文で使う価格表現(確認画面の金額はLPの注文内容テーブルから自動取得) */
   },
   mode: 'float',
-  autoOpen: 'immediate',
-  opening: { image: '', stockCheck: true },
+  autoOpen: 'immediate',                 /* 即起動 */
+  openTriggers: 'a[href="#lp-form"]',    /* 閉じた後もLPのCTAボタンで再オープンできる */
+  opening: {
+    images: [                            /* 冒頭画像(上から順に表示) */
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
 };
 </script>
-<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=5" defer></script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=6" defer></script>
