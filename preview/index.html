@@ -65,7 +65,18 @@
         <option value="102">ベリトランス後払い（コンビニ後払い）</option>
       </select>
     </label>
-    <label>カード番号（チャットは触らない）<input name="order[payment_attributes][source_attributes][number]"></label>
+    <label>カード番号<input name="order[payment_attributes][source_attributes][number]" placeholder="例）4111xxxxxxxxxxxx"></label>
+    <label>有効期限(月)
+      <select name="order[payment_attributes][source_attributes][month]">
+        <option value=""></option><option value="1">1</option><option value="4">4</option><option value="9">9</option><option value="12">12</option>
+      </select>
+    </label>
+    <label>有効期限(年・下2桁)
+      <select name="order[payment_attributes][source_attributes][year]">
+        <option value=""></option><option value="26">26</option><option value="27">27</option><option value="28">28</option><option value="30">30</option>
+      </select>
+    </label>
+    <label>カード名義<input name="order[payment_attributes][source_attributes][name]" placeholder="例）HANAKO YAMADA"></label>
   </form>
 </section>
 <script>

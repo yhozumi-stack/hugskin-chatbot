@@ -83,6 +83,46 @@ LP内の任意のボタンから開く場合は、その要素に `data-hs-open`
 2. ecforceタグ管理に新しいタグとして登録し、対象LPに適用
 3. chatbot.js 本体は共通のまま。**シナリオごと変えたい場合だけ**レシピ2/3で別名シナリオを作り、タグの `scenario` で指定
 
+### レシピ10: 途中に画像を入れる(複数枚OK)
+`SCENARIOS.standard` の配列の好きな位置に挿入(複数枚は複数行):
+```js
+{ type: 'image', src: 'https://…/campaign1.png' },
+{ type: 'image', src: 'https://…/campaign2.png' },
+```
+
+### レシピ11: 質問をまとめる/バラす
+`fields` 配列の組み替えだけ。例: メール+電話+パスワードを1カードにする:
+```js
+{ type: 'fields', key: 'account', intro: 'ご連絡先を教えてください', layout: 'stack',
+  fields: [
+    { key: 'email', label: 'メールアドレス', inputType: 'email', inputmode: 'email', autocomplete: 'email', validate: 'email' },
+    { key: 'tel', label: '電話番号', inputType: 'tel', inputmode: 'numeric', autocomplete: 'tel', validate: 'tel', norm: 'tel' },
+    { key: 'password', label: 'パスワード', inputType: 'password', autocomplete: 'new-password', validate: 'password', displayAs: '••••••••' },
+  ] },
+```
+バラす時は fields を1個ずつ別ステップに分けるだけ。**key名は変えないこと**(転記が key 名で動くため)。
+
+### レシピ12: 質問の文言を変える
+各ステップの `intro`(質問文)・`label`(入力欄名)・`placeholder`(例)・`msg` は全部自由に書き換えてOK。
+`{{PRICE}}` などの変数も文中で使える。
+
+### レシピ13: シナリオABテスト
+1. `SCENARIOS.standard` を丸ごとコピーして `SCENARIOS.b = [ ... ]` として追加、文言や順番を変える
+2. push 後、Bパターンにしたい LP のタグで `scenario: 'b'` を指定
+3. Clarity では `hs_scenario` カスタムタグでA/B別にセッションを絞り込める(自動送信済み)
+4. LP自体のABは ecforce/Squad beyond 側の既存AB機能でLPを分け、それぞれに別タグを貼る
+
+### レシピ14: カード入力ステップ(v3.3.0〜)
+- 支払いで「クレジット」を含む選択肢を選んだ時だけ自動表示(後払いなら自動スキップ)
+- 番号/有効期限(LPフォームの年selectから自動生成)/名義(自動大文字化)
+- **確認画面ではマスク表示・リダイレクトモードでは絶対に送信しない**(LP内フォームへの直接転記のみ)
+- カードを聞きたくない場合はシナリオから `{ type: 'card', ... }` の行を消すだけ(従来どおりお客様がフォームで入力)
+
+### レシピ15: 会員(登録済みメール)向けログイン導線(v3.3.0〜)
+- 冒頭の「ご利用は初めてですか？」で「会員です」を選ぶと、ログイン画面(`CFG.loginUrl`)を別タブで開く導線を表示
+- ecforceは登録済みメールでの新規注文を弾くため、この導線が離脱を防ぐ
+- 不要なら `first_time` ステップをシナリオから消すだけ
+
 ### レシピ7: 動作確認(変更したら必ずやる)
 ```bash
 cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
