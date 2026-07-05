@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】メール既登録エラー検知テスト</title>
+</head>
+<body>
+
+<h1>メール既登録エラーの再現ページ</h1>
+<!-- ecforceが送信を弾いて戻した時のエラー表示を模擬 -->
+<div style="background:#fdecea;border:1px solid #f5c6cb;padding:12px;max-width:500px">
+  <ul><li>メールアドレスはすでに登録されています。</li></ul>
+</div>
+
+<form action="/lp" onsubmit="return false">
+  <input name="order[billing_address_attributes][name01]">
+</form>
+
+<script>
+window.HS_CHAT = {
+  scenario: 'standard',
+  vars: { PRODUCT: 'HugSkin C10 ALL IN SERUM', PRICE: '初回限定 1,980円（税込）', OFFER: '初回限定' },
+  mode: 'float',
+  autoOpen: 'manual',   /* manual でもエラー検知時は自動で開くことのテスト */
+  opening: { stockCheck: false },
+};
+</script>
+<script src="../chatbot.js" defer></script>
+
+</body>
+</html>

@@ -77,6 +77,11 @@
       </select>
     </label>
     <label>カード名義<input name="order[payment_attributes][source_attributes][name]" placeholder="例）HANAKO YAMADA"></label>
+    <label style="display:none" id="consent-row">
+      <input type="checkbox" name="order[payment_attributes][source_attributes][consent]" style="width:auto"> 後払い規約に同意する
+    </label>
+    <input type="submit" class="submit_button_complete_ec" value="ご注文手続きへ"
+      onclick="window.__lpSubmitClicked = true; return false;">
   </form>
 </section>
 <script>

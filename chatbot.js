@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.3.0
+    HugSkin 獲得チャットボット v3.4.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -53,6 +53,10 @@ var DEFAULTS = {
                   なければ ecforceOrderUrl へリダイレクト
      'redirect' = 常にリダイレクト(カート型ページ用) */
   transferMode: 'auto',
+  /* チャット完了時にLPの注文ボタンを自動で押して確認画面まで進むか。
+     ⚠️ LPが「確認画面を表示しない」設定の場合は即注文確定になるため false にすること。
+     後払い(同意チェックが必要)の時は auto でも自動送信せず、チェックをお願いする案内になる */
+  autoSubmit: true,
   ecforceOrderUrl: 'https://hugskin.shop/shop/orders/new',
   loginUrl: 'https://hugskin.shop/shop/customers/sign_in',  // 会員向けログイン画面
   paymentChoices: null,            // 支払い選択肢の手動指定(通常はLPフォームから自動生成されるので不要)
@@ -110,14 +114,6 @@ var SCENARIOS = {
     { type: 'openingImage' },
     { type: 'msg',
       msg: 'こんにちは！✨\n{{PRODUCT}}の\nかんたん注文チャットです。\nただいま{{PRICE}}でご案内中です🎁' },
-
-    /* 会員判定: 登録済みメールでは新規注文できないため、会員はログインへ誘導 */
-    { type: 'choice', key: 'first_time', intro: 'HugSkinのご利用は初めてですか？',
-      choices: [
-        { label: 'はじめて利用します', value: 'first' },
-        { label: '会員です（2回目以降）', value: 'member' },
-      ],
-      memberMsg: '会員の方はログインしてからのご注文がスムーズです✨\n（ご登録済みのメールアドレスでは、新規のお客様用フォームからはご注文いただけません）' },
 
     /* お名前+フリガナ 1カード。漢字を入力するとフリガナが自動で入る(autokana) */
     { type: 'fields', key: 'name', intro: 'まず、お名前を教えてください', layout: 'stack',
@@ -180,10 +176,23 @@ var SCENARIOS = {
 
     { type: 'summary',
       msg: 'ご入力ありがとうございます！\n内容をご確認ください ✅',
-      submitLabel: 'この内容で注文フォームへ進む →' },
+      submitLabel: 'この内容で注文手続きへ進む →' },
   ],
 
 };
+
+/* 会員判定ステップ(冒頭で会員か聞くパターン)。
+   立ち上がり期は質問を増やさないため standard には入れず、
+   使いたいLPだけタグで scenario: 'member_ask' を指定する。
+   ※登録済みメールの検知は、送信後にecforceが弾いて戻ってきた画面を
+     チャットが自動検知してログイン案内する仕組みが standard にも入っている */
+var FIRST_TIME_STEP = { type: 'choice', key: 'first_time', intro: 'HugSkinのご利用は初めてですか？',
+  choices: [
+    { label: 'はじめて利用します', value: 'first' },
+    { label: '会員です（2回目以降）', value: 'member' },
+  ],
+  memberMsg: '会員の方はログインしてからのご注文がスムーズです✨\n（ご登録済みのメールアドレスでは、新規のお客様用フォームからはご注文いただけません）' };
+SCENARIOS.member_ask = SCENARIOS.standard.slice(0, 3).concat([FIRST_TIME_STEP], SCENARIOS.standard.slice(3));
 
 /* 確認画面などで使う項目名 */
 var LABELS = {
@@ -271,8 +280,10 @@ var current = 0;
 var doneCount = 0;
 var started = false;
 var interacted = false;    // 一度でも操作したか（モバイルでの勝手なキーボード起動防止）
-var editMode = false;      // 確認画面からの「その項目だけ修正」中か
+var editMode = false;      // 「その項目だけ修正」中か（確認画面 or 回答バブルタップ）
 var editReturned = false;  // 修正から確認画面に戻ってきた直後か（メッセージ切替用）
+var editReturnIdx = null;  // 修正完了後に戻るステップindex
+var pendingIdx = 0;        // いま表示中の質問のステップindex
 var totalInput = steps.filter(function (s) {
   return s.type === 'fields' || s.type === 'zip' || s.type === 'choice' || s.type === 'card';
 }).length;
@@ -313,6 +324,8 @@ var CSS = ''
 + '.bb{max-width:80%;padding:9px 13px;line-height:1.6;font-size:13.5px;word-break:break-word;white-space:pre-wrap}'
 + '.bb.bot{background:#fff;color:#3a2a30;border-radius:3px 12px 12px 12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}'
 + '.bb.user{background:' + CFG.theme.brand + ';color:#fff;border-radius:12px 3px 12px 12px}'
++ '.row.user.editable{cursor:pointer}'
++ '.ub-ed{color:' + CFG.theme.brand + ';font-size:12px;opacity:.6;margin-bottom:4px;flex-shrink:0}'
 + '.bb img{max-width:100%;border-radius:8px;display:block}'
 + '.img-bb{max-width:88%;padding:4px;background:#fff;border-radius:3px 12px 12px 12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}'
 + '.typing{background:#fff;border-radius:3px 12px 12px 12px;padding:11px 14px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;gap:5px;align-items:center}'
@@ -378,6 +391,11 @@ function buildChat(container, withClose) {
   var close = container.querySelector('.hd-close');
   if (close) close.addEventListener('click', closePanel);
   container.addEventListener('pointerdown', function () { interacted = true; }, true);
+  /* 回答バブルのタップ → その質問だけ修正 */
+  msgsEl.addEventListener('click', function (e) {
+    var row = e.target && e.target.closest ? e.target.closest('.row.user[data-edit]') : null;
+    if (row) startEdit(row.getAttribute('data-edit'));
+  });
 }
 
 function openPanel() {
@@ -418,6 +436,9 @@ function mount() {
   launcherEl.textContent = CFG.launcherText;
   launcherEl.addEventListener('click', function () { interacted = true; openPanel(); });
   wrap.appendChild(launcherEl);
+
+  /* メール既登録エラーで戻ってきた画面では、設定に関わらず自動で開いて案内する */
+  if (detectDupEmailError()) return openPanel();
 
   var a = String(CFG.autoOpen || 'manual');
   if (a === 'immediate') openPanel();
@@ -461,10 +482,13 @@ function botBubble(text) {
   row.innerHTML = '<div class="av">💬</div><div class="bb bot">' + esc(tpl(text)).replace(/\n/g, '<br>') + '</div>';
   msgsEl.appendChild(row); scrollBottom();
 }
-function userBubble(text) {
+/* editKey を渡すと、その回答バブルはタップで「その質問だけ修正」できる */
+function userBubble(text, editKey) {
   var row = document.createElement('div');
-  row.className = 'row user';
-  row.innerHTML = '<div class="bb user">' + esc(text) + '</div>';
+  row.className = 'row user' + (editKey ? ' editable' : '');
+  if (editKey) row.setAttribute('data-edit', editKey);
+  row.innerHTML = '<div class="bb user">' + esc(text) + '</div>'
+    + (editKey ? '<div class="ub-ed" title="タップして修正">✎</div>' : '');
   msgsEl.appendChild(row); scrollBottom();
 }
 function typing() {
@@ -494,6 +518,16 @@ function startFlow() {
   started = true;
   /* ABテスト用: Clarityにシナリオ名をタグ付け(セッション絞り込みに使う) */
   try { if (window.clarity) window.clarity('set', 'hs_scenario', CFG.scenario); } catch (e) {}
+  /* 送信後「メール既登録」で弾かれて戻ってきた画面なら、先にログイン案内を出す */
+  if (detectDupEmailError()) {
+    track('dup_email_detected');
+    renderLoginGuide(
+      'ご入力のメールアドレスは既にご登録があるようです💡\nログインしていただくとスムーズにご注文いただけます✨',
+      function () { runStep(0); },
+      '別のメールアドレスで入力する'
+    );
+    return;
+  }
   runStep(0);
 }
 
@@ -513,8 +547,9 @@ function summaryIndex() {
   return steps.length;
 }
 
-/* ステップ完了後の遷移。通常は次へ、修正モードなら確認画面へ直帰する。
-   例外: 郵便番号を修正した時は住所確認ステップを挟んでから確認画面へ戻る */
+/* ステップ完了後の遷移。通常は次へ、修正モードなら元いた場所へ直帰する。
+   例外: 郵便番号を修正した時は住所確認を、支払いをクレジットに変えた時は
+   カード入力(未入力なら)を挟んでから戻る */
 function next(i) {
   var s = steps[i];
   if (editMode) {
@@ -525,25 +560,29 @@ function next(i) {
       runStep(stepIndexByKey('addr1'));
       return;
     }
-    /* 支払いをクレジットに変更した場合はカード入力(未入力なら)を挟む */
     if (s.key === 'payment' && (answers.payment_label || '').indexOf('クレジット') >= 0
-        && !answers.card_number && stepIndexByKey('card') >= 0) {
+        && !answers.card_number && stepIndexByKey('card') > i) {
       runStep(stepIndexByKey('card'));
       return;
     }
+    var back = editReturnIdx == null ? summaryIndex() : editReturnIdx;
+    if (i >= back) back = i + 1;   // 修正対象がいまの質問以降なら、普通に先へ進む
     editMode = false;
-    editReturned = true;
-    runStep(summaryIndex());
+    editReturnIdx = null;
+    editReturned = back === summaryIndex();
+    runStep(back);
     return;
   }
   runStep(i + 1);
 }
 
-/* 確認画面の行タップ → その項目のステップだけ再表示(現在値プリフィル) */
+/* 確認画面の行 or 過去の回答バブルのタップ → その質問だけ再表示(現在値プリフィル)。
+   修正後は元いた質問(または確認画面)へ直帰する */
 function startEdit(key) {
   var idx = stepIndexByKey(key);
-  if (idx < 0) return;
+  if (idx < 0 || editMode) return;
   editMode = true;
+  editReturnIdx = pendingIdx;
   var s = steps[idx];
   if (s.type === 'fields') {
     s.fields.forEach(function (f) { if (answers[f.key] != null) prefill[f.key] = answers[f.key]; });
@@ -556,6 +595,7 @@ function startEdit(key) {
   }
   var sumEl = msgsEl.querySelector('.sum');
   if (sumEl) sumEl.remove();
+  clearCards();  // 表示中の質問カードも一旦引っ込める(修正後に再表示される)
   track('edit_' + key);
   runStep(idx);
 }
@@ -602,6 +642,7 @@ async function runStep(i) {
   /* --- 入力系 --- */
   var t = typing(); await delay(CFG.typingMs); t.remove();
 
+  if (!editMode) pendingIdx = i;   // 修正中でなければ「いまの質問」を記録
   if (s.type === 'choice') return renderChoice(s, i);
   if (s.type === 'zip')    return renderZip(s, i);
   if (s.type === 'fields') return renderFields(s, i);
@@ -642,11 +683,13 @@ function renderChoice(s, i) {
       clearCards();
       answers[s.key] = c.value;
       answers[s.key + '_label'] = c.label;
-      userBubble(c.label);
+      userBubble(c.label, s.key);
       if (!editMode) { doneCount++; progress(); }
       track('step_' + s.key);
       /* 会員(登録済みメール)の場合はログイン導線を出す */
-      if (s.key === 'first_time' && c.value === 'member') return renderLoginGuide(s, i);
+      if (s.key === 'first_time' && c.value === 'member') {
+        return renderLoginGuide(s.memberMsg, function () { next(i); });
+      }
       next(i);
     });
     wrapC.appendChild(b);
@@ -654,9 +697,10 @@ function renderChoice(s, i) {
   msgsEl.appendChild(wrapC); scrollBottom();
 }
 
-/* 会員向けログイン誘導(登録済みメールは新規フォームでecforceに弾かれるため) */
-function renderLoginGuide(s, i) {
-  botBubble(s.memberMsg || '会員の方はログインしてからのご注文がスムーズです✨');
+/* 会員向けログイン誘導(登録済みメールは新規フォームでecforceに弾かれるため)。
+   contFn = 「このまま入力を続ける」を押した時の続きの処理 */
+function renderLoginGuide(msg, contFn, contLabel) {
+  botBubble(msg || '会員の方はログインしてからのご注文がスムーズです✨');
   var wrapC = document.createElement('div');
   wrapC.className = 'choices';
   var loginBtn = document.createElement('button');
@@ -665,21 +709,29 @@ function renderLoginGuide(s, i) {
   loginBtn.addEventListener('click', function () {
     track('login_open');
     window.open(CFG.loginUrl, '_blank');
-    botBubble('ログイン後、このページに戻って\nそのままフォームからご注文いただけます✨\nこのまま入力を続けることもできます');
+    botBubble('ログイン後、このページに戻って\nそのままご注文いただけます✨');
     scrollBottom();
   });
   var contBtn = document.createElement('button');
   contBtn.className = 'ch';
-  contBtn.textContent = 'このまま入力を続ける';
+  contBtn.textContent = contLabel || 'このまま入力を続ける';
   contBtn.addEventListener('click', function () {
     clearCards();
-    userBubble('このまま入力を続ける');
+    userBubble(contBtn.textContent);
     track('login_skip');
-    next(i);
+    contFn();
   });
   wrapC.appendChild(loginBtn);
   wrapC.appendChild(contBtn);
   msgsEl.appendChild(wrapC); scrollBottom();
+}
+
+/* 送信後にecforceが「メールアドレスは既に登録済み」で弾いて戻ってきた画面かを判定 */
+function detectDupEmailError() {
+  try {
+    var t = document.body.innerText || '';
+    return /(メールアドレス|Ｅメール|Eメール|email)[^\n。]{0,40}(既に|すでに)[^\n。]{0,15}(登録|使用|存在)/i.test(t);
+  } catch (e) { return false; }
 }
 
 function fieldInputHtml(f, idx) {
@@ -743,7 +795,7 @@ function renderFields(s, i) {
       answers[x.f.key] = x.v;
       if (x.v) shown.push(x.f.displayAs || x.v);
     });
-    userBubble(shown.join('　'));
+    userBubble(shown.join('　'), s.key);
     if (!editMode) { doneCount++; progress(); }
     track('step_' + s.key);
     next(i);
@@ -841,7 +893,7 @@ function renderCard(s, i) {
     answers.card_month = mo;
     answers.card_year = yr;
     answers.card_name = nm;
-    userBubble('カード末尾 ' + num.slice(-4) + '　' + mo + '/20' + yr);
+    userBubble('カード末尾 ' + num.slice(-4) + '　' + mo + '/20' + yr, 'card');
     if (!editMode) { doneCount++; progress(); }
     track('step_card');  /* 値は絶対に送らない */
     next(i);
@@ -880,7 +932,7 @@ function renderZip(s, i) {
     } catch (e) { /* API失敗時は手入力にフォールバック */ }
 
     clearCards();
-    userBubble('〒' + z.slice(0, 3) + '-' + z.slice(3));
+    userBubble('〒' + z.slice(0, 3) + '-' + z.slice(3), 'zip');
     if (!editMode) { doneCount++; progress(); }
     track('step_zip');
 
@@ -1047,8 +1099,28 @@ function transfer() {
     fillLocalForm(localForm);
     track('fill_local');
     var sbtn = msgsEl.querySelector('.sum .go');
+
+    /* 後払いで同意チェックが表示されている場合は自動送信せず、チェックをお願いする */
+    var consentEl = localForm.querySelector('[name="order[payment_attributes][source_attributes][consent]"]');
+    var isCredit = (answers.payment_label || '').indexOf('クレジット') >= 0;
+    var needsConsent = !isCredit && consentEl && !consentEl.checked && !!consentEl.offsetParent;
+
+    if (CFG.autoSubmit && !needsConsent) {
+      /* 注文ボタンを自動で押して確認画面へ進む(住所再セットの900msを待ってから) */
+      if (sbtn) sbtn.textContent = '手続きへ進んでいます…';
+      botBubble('ありがとうございます！\nご注文手続きへ進みます✨');
+      track('auto_submit');
+      setTimeout(function () {
+        var submit = localForm.querySelector('input[type=submit], button[type=submit]');
+        if (submit) submit.click(); else localForm.submit();
+      }, 1300);
+      return;
+    }
+
     if (sbtn) sbtn.textContent = '反映しました ✅';
-    botBubble('ご入力内容をこのページの注文フォームに反映しました✅\nフォームの内容をご確認のうえ、そのままお手続きを完了してください✨');
+    botBubble(needsConsent
+      ? 'ご入力内容を注文フォームに反映しました✅\nフォームの「後払いの同意」にチェックを入れて、\n注文ボタンを押してください✨'
+      : 'ご入力内容をこのページの注文フォームに反映しました✅\nフォームの内容をご確認のうえ、そのままお手続きを完了してください✨');
     setTimeout(function () {
       localForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
       if (CFG.mode === 'float') setTimeout(closePanel, 600);
