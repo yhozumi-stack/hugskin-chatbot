@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.17.0
+    HugSkin 獲得チャットボット v3.18.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -22,6 +22,10 @@
    ============================================================ */
 var DEFAULTS = {
   scenario: 'standard',            // 使うシナリオ名（SCENARIOS のキー）
+  /* 質問の順番をタグから並べ替え(キーの配列)。指定しなければシナリオの順のまま。
+     例: stepOrder: ['name', 'addr', 'birthdate', 'contact', 'payment']
+     ※カード入力は支払いの直後、確認画面は最後に自動配置される */
+  stepOrder: null,
   vars: {                          // シナリオ文言に {{KEY}} で差し込まれる変数
     PRODUCT: '',                   // 空ならLPの商品名ブロックから自動取得（連番 _0012 等は自動除去）
     PRICE:   '',                   // 価格はLPのHTMLに存在しないため自動取得不可。表示したい時だけタグで指定
@@ -348,9 +352,20 @@ var VALIDATORS = {
   zip:      function (v) { return /^\d{7}$/.test(v) ? null : '郵便番号7桁で入力してください（例：1500001）'; },
 };
 
-/* ---------- 計測フック（Clarity / GTM dataLayer） ---------- */
+/* ---------- 計測フック（Clarity / GTM dataLayer） ----------
+   離脱分析ダッシュボード用に、イベント名に加えて
+   ステップ名・シナリオ名・LP(ページ+広告URL)をパラメータで送る。
+   GTM側で「hs_chat_ で始まるイベントをGA4に転送」する設定を1回すれば
+   GA4で 期間×LP×シナリオ×ステップ の絞り込み分析ができる */
 function track(ev) {
-  try { if (window.dataLayer) window.dataLayer.push({ event: 'hs_chat_' + ev }); } catch (e) {}
+  try {
+    if (window.dataLayer) window.dataLayer.push({
+      event: 'hs_chat_' + ev,
+      hs_event: ev,
+      hs_scenario: CFG.scenario,
+      hs_page: location.pathname + location.search,
+    });
+  } catch (e) {}
   try { if (window.clarity) window.clarity('event', 'hs_chat_' + ev); } catch (e) {}
 }
 
@@ -373,6 +388,35 @@ steps = steps.map(function (s) {
   if ((s.type === 'choice' || s.type === 'zip') && (s.key in SKIP)) return null;
   return s;
 }).filter(Boolean);
+
+/* タグの stepOrder で質問の順番を並べ替える。
+   冒頭演出(stock/画像/挨拶)は先頭のまま、カード入力は支払いの直後、確認画面は最後に自動配置。
+   stepOrder に書かれていない質問は、元の順番のまま後ろに続く */
+if (CFG.stepOrder && CFG.stepOrder.length) {
+  var INPUT_TYPES = ['fields', 'choice', 'zip', 'birth', 'address'];
+  var openingSteps = [], inputSteps = [], cardStep = null, summarySt = null;
+  steps.forEach(function (s) {
+    if (s.type === 'summary') { summarySt = s; return; }
+    if (s.type === 'card') { cardStep = s; return; }
+    if (INPUT_TYPES.indexOf(s.type) >= 0 && s.key) { inputSteps.push(s); return; }
+    openingSteps.push(s);
+  });
+  var listed = {};
+  CFG.stepOrder.forEach(function (k) { listed[k] = true; });
+  var orderedInputs = [];
+  CFG.stepOrder.forEach(function (k) {
+    inputSteps.forEach(function (s) { if (s.key === k) orderedInputs.push(s); });
+  });
+  inputSteps.forEach(function (s) { if (!listed[s.key]) orderedInputs.push(s); });
+  steps = openingSteps.concat(orderedInputs);
+  if (cardStep) {
+    var payIdx = -1;
+    steps.forEach(function (s, idx) { if (s.key === 'payment') payIdx = idx; });
+    if (payIdx >= 0) steps.splice(payIdx + 1, 0, cardStep);
+    else steps.push(cardStep);
+  }
+  if (summarySt) steps.push(summarySt);
+}
 
 var answers = {};
 var prefill = {};          // 郵便番号API→住所カードへの受け渡し

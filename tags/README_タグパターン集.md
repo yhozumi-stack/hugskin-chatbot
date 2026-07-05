@@ -175,3 +175,13 @@ fieldNotes: { email: '' },                 /* 消す場合 */
 ```
 チェックが外れている間は確定ボタンが押せない。チャットで同意済みの場合のみ、
 LP側の同意チェック(input[name=agree])にも自動で反映される。
+
+## 質問の順番をタグで並べ替え(v3.18.0〜)
+
+```js
+/* キーの配列で順番を指定。書かなかった質問は元の順で後ろに続く。
+   カード入力は支払いの直後、確認画面は最後に自動配置 */
+stepOrder: ['name', 'addr', 'birthdate', 'contact', 'payment'],
+```
+キー一覧: name(名前+カナ) / birthdate(生年月日+性別※formplus) / sex(性別※standard) /
+addr(住所+電話※formplus) / zip・addr(※standard) / contact(メール等) / password(※standard) / payment

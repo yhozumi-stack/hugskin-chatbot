@@ -1,0 +1,31 @@
+# 配信ヘルスチェック
+# 6時間ごとに chatbot.js が正しく配信されているかを確認する。
+# 失敗するとGitHubがリポジトリオーナーへ自動でメール通知する(設定不要)。
+# ※チャットが配信不能でもLPの通常フォームは無傷なのでCV自体は止まらないが、
+#   早期検知のためにこのチェックを回す。cronはUTC(日本時間-9h)。
+name: Healthcheck
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: chatbot.js の配信と中身を確認
+        run: |
+          url="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?hc=${RANDOM}"
+          body=$(curl -sf --max-time 20 "$url") || { echo "::error::chatbot.js が取得できません(配信停止の可能性)"; exit 1; }
+          echo "$body" | head -3 | grep -q "HugSkin 獲得チャットボット" || { echo "::error::chatbot.js の中身が壊れています"; exit 1; }
+          size=$(echo -n "$body" | wc -c)
+          [ "$size" -gt 30000 ] || { echo "::error::ファイルサイズが異常に小さい(${size}bytes)"; exit 1; }
+          echo "OK: ${size} bytes"
+      - name: 画像アセットの配信を確認
+        run: |
+          for img in operator.png payment_promo.png; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "https://yhozumi-stack.github.io/hugskin-chatbot/img/${img}")
+            [ "$code" = "200" ] || { echo "::error::img/${img} が配信されていません(HTTP ${code})"; exit 1; }
+          done
+          echo "OK: images serving"
