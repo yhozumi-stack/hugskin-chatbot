@@ -3,6 +3,12 @@
 ecforce LP に埋め込む新規獲得用チャットボット。1ファイル(`chatbot.js`)完結・依存ゼロ・ビルド不要。
 **このマニュアルはSonnet等の低モデルでの運用を前提に、コピペで済む手順(レシピ)として書いてある。**
 
+## 転記の仕組み(2モード自動切替)
+- **モードA: LP内フォーム直接入力(既定・推奨)** — ecforceのLP一体型注文フォーム(`order[billing_address_attributes][name01]`がページ内にある)を検出したら、チャット完了時に**同ページのフォームへ直接入力**してスクロール誘導。**ecforce側へのスクリプト設置は不要**。支払い方法の選択肢もフォームから自動生成(LP毎のID差異に無設定で追従)
+- **モードB: リダイレクト(フォールバック)** — フォームが無いページでは `ecforceOrderUrl` へURLパラメータ遷移。遷移先に `ecforce/orders_new_autofill.html` の設置が必要
+- フィールド名は **2026-07-05 に hugskin.shop/lp?u=ug29_test の実フォームで照合済**(全12項目必須・住所1=市区町村/住所2=番地建物・prefecture_id=JISコード数値・birth=3分割select・payment_method_id=数値ID)
+- **カード番号と後払い同意チェックはチャットは絶対に扱わない**(お客様がフォームで直接入力・同意する)
+
 ## 構成
 
 | ファイル | 役割 | 編集頻度 |
@@ -131,6 +137,8 @@ skip: {
 
 ## 残タスク(2026-07-05時点)
 - [x] GitHub リポジトリ作成 + Pages 有効化 + `tags/ecforce_tag.html` のURL確定(2026-07-05完了)
-- [ ] **ecforce実フォーム照合**: 本番 `https://hugskin.shop/shop/orders/new` の name 属性一覧を取得し、`transfer()` と `ecforce/orders_new_autofill.html` のフィールド名と照合(特に生年月日がselectか、後払いの `payment_kind` の値が `cod` か)
-- [ ] orders/new テンプレートへの自動入力スクリプト設置(ecforce管理画面)
+- [x] 実フォーム照合(2026-07-05完了、lp?u=ug29_test にて。直接入力モードに刷新し `/shop/orders/new` リダイレクトは廃止=あのURLは404)
+- [ ] ecforceタグ管理へのタグ登録 + テストLPへの適用(保積さん操作)
+- [ ] タグ適用後のテストLPで通し確認(チャット→フォーム反映→confirm画面まで。**最終の注文確定は押さない**)
 - [ ] 本番LPでのモバイル実機確認
+- [ ] (モードB利用時のみ) 遷移先テンプレートへの自動入力スクリプト設置

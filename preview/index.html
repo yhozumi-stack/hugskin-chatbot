@@ -27,6 +27,55 @@
      上のCTAボタンは data-hs-open 属性でチャットを開くフックのテストです。</p>
 </section>
 <div class="spacer">（スクロール領域）</div>
+
+<!-- ▼▼ 実LP(hugskin.shop/lp)と同じname属性の注文フォームモック(2026-07-05実フォーム照合済) ▼▼ -->
+<section>
+  <h2>ご注文フォーム（モック）</h2>
+  <p style="font-size:12px;color:#888">チャット完了時にここへ直接入力される(緑枠=入力成功)。実LPのname属性を再現。</p>
+  <form action="/lp" method="post" onsubmit="return false" style="display:grid;gap:10px;max-width:480px">
+    <label>お名前<input name="order[billing_address_attributes][name01]"></label>
+    <label>フリガナ<input name="order[billing_address_attributes][kana01]"></label>
+    <label>郵便番号<input name="order[billing_address_attributes][zip01]"></label>
+    <label>都道府県
+      <select name="order[billing_address_attributes][prefecture_id]">
+        <option value="">選択してください</option>
+        <option value="1">北海道</option><option value="13">東京都</option>
+        <option value="14">神奈川県</option><option value="27">大阪府</option><option value="47">沖縄県</option>
+      </select>
+    </label>
+    <label>住所1（市郡区／町・村）<input name="order[billing_address_attributes][addr01]"></label>
+    <label>住所2（丁目・番地・マンション名・号室）<input name="order[billing_address_attributes][addr02]"></label>
+    <label>電話番号<input name="order[billing_address_attributes][tel01]"></label>
+    <label>メールアドレス<input type="email" name="order[email]"></label>
+    <label>パスワード<input type="password" name="order[customer_attributes][password]"></label>
+    <label>性別
+      <select name="order[customer_attributes][sex_id]">
+        <option value="">選択してください</option><option value="1">男性</option><option value="2">女性</option>
+      </select>
+    </label>
+    <label>生年月日
+      <select name="order[customer_attributes][birth(1i)]"><option value=""></option><option value="1990">1990</option><option value="1995">1995</option></select>
+      <select name="order[customer_attributes][birth(2i)]"><option value=""></option><option value="1">1</option><option value="12">12</option></select>
+      <select name="order[customer_attributes][birth(3i)]"><option value=""></option><option value="15">15</option><option value="31">31</option></select>
+    </label>
+    <label>お支払い方法
+      <select name="order[payment_attributes][payment_method_id]">
+        <option value="">選択してください</option>
+        <option value="21">クレジットカード一括</option>
+        <option value="102">ベリトランス後払い（コンビニ後払い）</option>
+      </select>
+    </label>
+    <label>カード番号（チャットは触らない）<input name="order[payment_attributes][source_attributes][number]"></label>
+  </form>
+</section>
+<script>
+  // 入力されたフィールドを緑枠にする(テスト可視化用)
+  document.addEventListener('input', e => {
+    if (e.target.name && e.target.value) e.target.style.outline = '2px solid #7bc47f';
+  }, true);
+</script>
+<!-- ▲▲ フォームモックここまで ▲▲ -->
+
 <section>
   <p>ページ末尾。</p>
 </section>

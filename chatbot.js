@@ -48,6 +48,11 @@ var DEFAULTS = {
   subtitle: 'かんたん注文チャット（約1分）',
   launcherText: '💬 かんたん注文はこちら',
   typingMs: 120,                   // ボット発話前の「間」。0で完全即時
+  /* 転記モード:
+     'auto'     = LP内にecforce注文フォームがあれば直接入力(推奨・スクリプト設置不要)、
+                  なければ ecforceOrderUrl へリダイレクト
+     'redirect' = 常にリダイレクト(カート型ページ用) */
+  transferMode: 'auto',
   ecforceOrderUrl: 'https://hugskin.shop/shop/orders/new',
   zipApi: 'https://zipcloud.ibsnet.co.jp/api/search?zipcode=',
 };
@@ -106,6 +111,12 @@ var SCENARIOS = {
           validate: 'required' },
       ] },
 
+    { type: 'fields', key: 'kana', intro: 'フリガナを教えてください\n（ひらがなでもOKです）', layout: '2col',
+      fields: [
+        { key: 'kana_last',  label: 'セイ', placeholder: '例：タナカ', validate: 'kana', norm: 'kana' },
+        { key: 'kana_first', label: 'メイ', placeholder: '例：ハナコ', validate: 'kana', norm: 'kana' },
+      ] },
+
     { type: 'fields', key: 'contact', intro: 'ご連絡先を教えてください', layout: 'stack',
       fields: [
         { key: 'email', label: 'メールアドレス', placeholder: '例：hanako@example.com',
@@ -121,6 +132,12 @@ var SCENARIOS = {
           displayAs: '••••••••' },
       ] },
 
+    { type: 'choice', key: 'sex', intro: '性別を教えてください',
+      choices: [
+        { label: '女性', value: '2' },
+        { label: '男性', value: '1' },
+      ] },
+
     { type: 'fields', key: 'birth', intro: '生年月日を教えてください', layout: 'stack',
       fields: [
         { key: 'birthdate', label: '生年月日', placeholder: '例：19900115 または 1990/01/15',
@@ -133,15 +150,17 @@ var SCENARIOS = {
     { type: 'fields', key: 'addr', intro: 'ご住所をご確認・ご入力ください', layout: 'stack',
       fields: [
         { key: 'pref',  label: '都道府県', inputTag: 'select', validate: 'required' },
-        { key: 'addr1', label: '市区町村・番地', placeholder: '例：渋谷区神宮前1-2-3', validate: 'required' },
-        { key: 'addr2', label: '建物名・部屋番号（任意）', placeholder: '例：ハグスキンマンション201',
-          optional: true },
+        { key: 'addr1', label: '市区町村', placeholder: '例：渋谷区神宮前', validate: 'required' },
+        { key: 'addr2', label: '丁目・番地・建物名・号室', placeholder: '例：1-2-3 ハグスキンマンション201',
+          validate: 'required' },
       ] },
 
+    /* 支払い方法: LP内フォームがある場合は実フォームの選択肢から自動生成される。
+       下記はフォームが見つからない場合(リダイレクトモード)のフォールバック */
     { type: 'choice', key: 'payment', intro: 'お支払い方法をお選びください',
       choices: [
-        { label: 'クレジットカード', value: 'credit_card' },
-        { label: '後払い（コンビニ/銀行）', value: 'cod' },
+        { label: 'クレジットカード', value: '21' },
+        { label: '後払い（コンビニ/銀行）', value: '102' },
       ] },
 
     { type: 'summary',
@@ -153,9 +172,10 @@ var SCENARIOS = {
 
 /* 確認画面などで使う項目名 */
 var LABELS = {
-  name_last: '姓', name_first: '名', email: 'メール', tel: '電話番号',
-  password: 'パスワード', birthdate: '生年月日', zip: '郵便番号',
-  pref: '都道府県', addr1: '市区町村・番地', addr2: '建物名', payment: 'お支払い',
+  name_last: '姓', name_first: '名', kana_last: 'セイ', kana_first: 'メイ',
+  email: 'メール', tel: '電話番号',
+  password: 'パスワード', sex: '性別', birthdate: '生年月日', zip: '郵便番号',
+  pref: '都道府県', addr1: '市区町村', addr2: '番地・建物', payment: 'お支払い',
 };
 
 var PREFS = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
@@ -173,6 +193,9 @@ function z2h(s) { // 全角→半角
 var NORMS = {
   tel:  function (v) { return z2h(v).replace(/[-\s]/g, ''); },
   zip:  function (v) { return z2h(v).replace(/[-\s]/g, ''); },
+  kana: function (v) { // ひらがな→カタカナ変換
+    return v.trim().replace(/[ぁ-ゖ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0x60); });
+  },
   birth: function (v) {
     var m = z2h(v).trim().match(/^(\d{4})[\/\-年.]?(\d{1,2})[\/\-月.]?(\d{1,2})日?$/);
     if (!m) return v;
@@ -187,6 +210,7 @@ var VALIDATORS = {
   tel:      function (v) { return /^0\d{9,10}$/.test(v) ? null : '正しい電話番号を入力してください（例：09012345678）'; },
   password: function (v) { return v.length >= 8 ? null : '8文字以上で入力してください'; },
   birth:    function (v) { return /^\d{4}\/\d{2}\/\d{2}$/.test(v) ? null : '例）1990/01/15 の形式で入力してください'; },
+  kana:     function (v) { return /^[ァ-ヶー・\s　]+$/.test(v) ? null : 'カタカナで入力してください'; },
   zip:      function (v) { return /^\d{7}$/.test(v) ? null : '郵便番号7桁で入力してください（例：1500001）'; },
 };
 
@@ -486,11 +510,25 @@ async function runStep(i) {
   if (s.type === 'summary') return renderSummary(s);
 }
 
+/* LP内フォームの支払い方法selectから選択肢を自動生成
+   (LPごとに支払い方法IDが違っても設定不要で追従する) */
+function paymentChoicesFromPage() {
+  var sel = document.querySelector('[name="order[payment_attributes][payment_method_id]"]');
+  if (!sel || !sel.options) return null;
+  var out = [];
+  for (var i = 0; i < sel.options.length; i++) {
+    var o = sel.options[i];
+    if (o.value) out.push({ label: o.text.trim(), value: o.value });
+  }
+  return out.length ? out : null;
+}
+
 function renderChoice(s, i) {
   botBubble(s.intro);
   var wrapC = document.createElement('div');
   wrapC.className = 'choices';
-  s.choices.forEach(function (c) {
+  var choiceList = (s.key === 'payment' && paymentChoicesFromPage()) || s.choices;
+  choiceList.forEach(function (c) {
     var b = document.createElement('button');
     b.className = 'ch';
     b.textContent = c.label;
@@ -614,7 +652,7 @@ function renderZip(s, i) {
     if (found) {
       prefill.pref = found.pref;
       prefill.addr1 = found.city;
-      botBubble('「' + found.pref + found.city + '」ですね！\n続きの番地からご入力ください✨');
+      botBubble('「' + found.pref + found.city + '」ですね！\n番地・建物名をご入力ください✨');
     }
     runStep(i + 1);
   });
@@ -626,10 +664,11 @@ async function renderSummary(s) {
   progress();
   botBubble(s.msg);
   var rows = '';
-  ['name_last', 'name_first', 'email', 'tel', 'password', 'birthdate', 'zip', 'pref', 'addr1', 'addr2'].forEach(function (k) {
+  ['name_last', 'name_first', 'kana_last', 'kana_first', 'email', 'tel', 'password', 'sex', 'birthdate', 'zip', 'pref', 'addr1', 'addr2'].forEach(function (k) {
     if (!answers[k]) return;
     var v = k === 'password' ? '••••••••' : answers[k];
     if (k === 'zip') v = '〒' + v.slice(0, 3) + '-' + v.slice(3);
+    if (k === 'sex') v = answers.sex_label || v;
     rows += '<tr><td>' + LABELS[k] + '</td><td>' + esc(v) + '</td></tr>';
   });
   if (answers.payment_label) rows += '<tr><td>' + LABELS.payment + '</td><td>' + esc(answers.payment_label) + '</td></tr>';
@@ -646,10 +685,17 @@ async function renderSummary(s) {
 }
 
 /* ---------- ecforce への転記 ----------
-   注文ページ(orders/new)へURLパラメータで受け渡し、
-   orders/new 側に設置した自動入力スクリプトが読み取る。
-   ⚠️ パラメータ名は ecforce/orders_new_autofill.html と対応。
-      実フォームの name 属性と照合済みであること。 */
+   【モードA: LP内フォーム直接入力(推奨・既定)】
+     ecforceのLP一体型注文フォーム(action=/lp)がこのページにあれば、
+     そこへ直接入力してスクロール誘導する。スクリプト設置不要。
+     フィールド名は 2026-07-05 に hugskin.shop/lp?u=ug29_test の実フォームで照合済:
+       order[billing_address_attributes][name01/kana01/zip01/prefecture_id/addr01/addr02/tel01]
+       order[email] / order[customer_attributes][email/password/sex_id/birth(1i)(2i)(3i)]
+       order[payment_attributes][payment_method_id](select・値は数値ID)
+     ※カード番号・後払い同意チェックは扱わない(お客様自身がフォームで入力/同意)
+   【モードB: リダイレクト(フォールバック)】
+     LP内にフォームが無い場合、ecforceOrderUrl へURLパラメータ付き遷移。
+     遷移先に ecforce/orders_new_autofill.html の設置が必要。 */
 function randStr(n) {
   var chars = 'abcdefghjkmnpqrstuvwxyz23456789', s = '';
   for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -679,8 +725,64 @@ function resolveSkips() {
   }
 }
 
+function findLocalForm() {
+  var el = document.querySelector('[name="order[billing_address_attributes][name01]"]');
+  return el ? (el.form || el.closest('form')) : null;
+}
+
+function setField(scope, name, val) {
+  if (val == null || val === '') return;
+  var el = scope.querySelector('[name="' + name + '"]');
+  if (!el) return;
+  el.value = val;
+  ['input', 'change'].forEach(function (ev) { el.dispatchEvent(new Event(ev, { bubbles: true })); });
+}
+
+function fillLocalForm(form) {
+  var join = function (a, b) { return [a, b].filter(Boolean).join('　'); };
+  setField(form, 'order[billing_address_attributes][name01]', join(answers.name_last, answers.name_first));
+  setField(form, 'order[billing_address_attributes][kana01]', join(answers.kana_last, answers.kana_first));
+  setField(form, 'order[billing_address_attributes][zip01]', answers.zip);
+  if (answers.pref) {
+    var prefId = PREFS.indexOf(answers.pref) + 1;   // PREFS はJISコード順 → index+1 = prefecture_id
+    if (prefId > 0) setField(form, 'order[billing_address_attributes][prefecture_id]', String(prefId));
+  }
+  setField(form, 'order[billing_address_attributes][addr01]', answers.addr1);
+  setField(form, 'order[billing_address_attributes][addr02]', answers.addr2);
+  setField(form, 'order[billing_address_attributes][tel01]', answers.tel);
+  setField(form, 'order[email]', answers.email);
+  setField(form, 'order[customer_attributes][email]', answers.email);
+  setField(form, 'order[customer_attributes][password]', answers.password);
+  setField(form, 'order[customer_attributes][sex_id]', answers.sex);
+  if (answers.birthdate) {
+    var b = answers.birthdate.split('/');
+    setField(form, 'order[customer_attributes][birth(1i)]', String(+b[0]));
+    setField(form, 'order[customer_attributes][birth(2i)]', String(+b[1]));  // selectの値はゼロ埋めなし
+    setField(form, 'order[customer_attributes][birth(3i)]', String(+b[2]));
+  }
+  setField(form, 'order[payment_attributes][payment_method_id]', answers.payment);
+  /* カード番号・後払い同意チェックは意図的に触らない */
+}
+
 function transfer() {
   resolveSkips();
+
+  /* モードA: LP内フォームへ直接入力 */
+  var localForm = CFG.transferMode !== 'redirect' ? findLocalForm() : null;
+  if (localForm) {
+    fillLocalForm(localForm);
+    track('fill_local');
+    var sbtn = msgsEl.querySelector('.sum .go');
+    if (sbtn) sbtn.textContent = '反映しました ✅';
+    botBubble('ご入力内容をこのページの注文フォームに反映しました✅\nフォームの内容をご確認のうえ、そのままお手続きを完了してください✨');
+    setTimeout(function () {
+      localForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (CFG.mode === 'float') setTimeout(closePanel, 600);
+    }, 1400);
+    return;
+  }
+
+  /* モードB: リダイレクト */
   var p = new URLSearchParams();
   if (answers.name_last)  p.set('order[billing_address][name01]', answers.name_last);
   if (answers.name_first) p.set('order[billing_address][name02]', answers.name_first);
