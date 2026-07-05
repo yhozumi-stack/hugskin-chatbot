@@ -80,6 +80,14 @@ summaryOptions: {
 },
 ```
 
+## 挨拶文を変える(LP個別・push不要)
+
+```js
+/* 改行は \n。{{PRODUCT}}(商品名自動)や{{PRICE}}も使える */
+greeting: 'こんにちは！✨\nいまだけ{{PRICE}}でご案内中です🎁\n30秒でご注文完了します',
+```
+※挨拶以外の質問文・ボタン文言を変えたい時は chatbot.js の SCENARIOS を編集(CLAUDE.mdレシピ12、Sonnetで可)
+
 ## その他よく使うもの
 
 ```js

@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.11.0
+    HugSkin 獲得チャットボット v3.12.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -27,6 +27,10 @@ var DEFAULTS = {
     PRICE:   '',                   // 価格はLPのHTMLに存在しないため自動取得不可。表示したい時だけタグで指定
     OFFER:   '',
   },
+  /* 挨拶文の上書き(LP個別・push不要)。空ならシナリオの既定文。
+     改行は \n。{{PRODUCT}}{{PRICE}}等の変数も使える
+     例: greeting: 'こんにちは！✨\nいまだけ{{PRICE}}です🎁' */
+  greeting: '',
   /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
      例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' } */
   summaryOptions: {},
@@ -136,7 +140,8 @@ var SCENARIOS = {
   standard: [
     { type: 'stock' },
     { type: 'openingImage' },
-    { type: 'msg',
+    /* 挨拶。タグの greeting で上書き可(key:'greet'がその目印) */
+    { type: 'msg', key: 'greet',
       msg: 'こんにちは！✨\n{{PRODUCT}}の\nかんたん注文チャットです。\nただいま{{PRICE}}でご案内中です🎁' },
 
     /* お名前+フリガナ 1カード。
@@ -706,7 +711,8 @@ async function runStepInner(i) {
   }
   if (s.type === 'msg') {
     var t0 = typing(); await delay(CFG.typingMs); t0.remove();
-    botBubble(s.msg);
+    /* 挨拶(key:'greet')はタグの greeting 設定で上書きできる */
+    botBubble(s.key === 'greet' && CFG.greeting ? CFG.greeting : s.msg);
     return runStep(i + 1);
   }
   /* カードステップは支払いがクレジット系の時だけ表示 */
