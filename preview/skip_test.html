@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】skip機能テスト — 電話/PW/生年月日を聞かない構成</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; margin: 0; color: #333; }
+  .hero { background: linear-gradient(135deg, #f9f1f4, #f0d9e2); padding: 60px 20px; text-align: center; }
+  .hero h1 { color: #a86880; font-size: 24px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>skip機能テスト用LP</h1>
+  <p>質問するのは 名前・メール・住所・支払い のみ。<br>
+     電話(固定ダミー)・パスワード(auto)・生年月日(固定)は聞かずに転記される。</p>
+</div>
+
+<script>
+window.HS_CHAT = {
+  scenario: 'standard',
+  vars: {
+    PRODUCT: 'HugSkin C10 ALL IN SERUM',
+    PRICE:   '初回限定 1,980円（税込）',
+    OFFER:   '初回限定',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  opening: { image: '', stockCheck: false },
+  skip: {
+    tel:       '09000000000',
+    password:  'auto',
+    birthdate: '1990/01/01',
+  },
+  ecforceOrderUrl: './orders_new_mock.html',
+};
+</script>
+<script src="../chatbot.js" defer></script>
+
+</body>
+</html>

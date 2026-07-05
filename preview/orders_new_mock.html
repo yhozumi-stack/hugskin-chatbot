@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【モック】ecforce 注文フォーム（自動入力テスト用）</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; background: #f6f6f6; margin: 0; padding: 20px; }
+  .note { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 8px; padding: 12px 16px; max-width: 640px; margin: 0 auto 20px; font-size: 13px; }
+  form { background: #fff; border-radius: 12px; max-width: 640px; margin: 0 auto; padding: 24px; }
+  .row { margin-bottom: 14px; }
+  label { display: block; font-size: 12px; color: #777; margin-bottom: 4px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  .cols { display: flex; gap: 10px; }
+  .cols > div { flex: 1; }
+  .radio-row label { display: inline; font-size: 14px; color: #333; margin-right: 16px; }
+  h1 { font-size: 18px; max-width: 640px; margin: 0 auto 16px; }
+  .filled { outline: 2px solid #7bc47f; }
+</style>
+</head>
+<body>
+<h1>ご注文手続き（モック）</h1>
+<div class="note">
+  ⚠️ これは <b>ecforce の orders/new を模したテスト用モック</b>です。フィールドの name 属性を
+  ecforce テーマガイド準拠で再現しています（実フォームとの照合は別途必要）。
+  チャットボットから遷移すると下のフォームに自動入力され、入力されたフィールドは緑枠になります。
+</div>
+
+<form>
+  <div class="row cols">
+    <div><label>姓</label><input name="order[billing_address][name01]"></div>
+    <div><label>名</label><input name="order[billing_address][name02]"></div>
+  </div>
+  <div class="row"><label>メールアドレス</label><input name="order[email]"></div>
+  <div class="row"><label>パスワード</label><input type="password" name="order[password]"></div>
+  <div class="row cols">
+    <div><label>電話番号1</label><input name="order[billing_address][tel01]"></div>
+    <div><label>電話番号2</label><input name="order[billing_address][tel02]"></div>
+    <div><label>電話番号3</label><input name="order[billing_address][tel03]"></div>
+  </div>
+  <div class="row cols">
+    <div><label>生年月日(年)</label><input name="order[customer][birth_year]"></div>
+    <div><label>(月)</label><input name="order[customer][birth_month]"></div>
+    <div><label>(日)</label><input name="order[customer][birth_day]"></div>
+  </div>
+  <div class="row cols">
+    <div><label>郵便番号(前3桁)</label><input name="order[billing_address][zipcode01]"></div>
+    <div><label>(後4桁)</label><input name="order[billing_address][zipcode02]"></div>
+  </div>
+  <div class="row"><label>都道府県</label>
+    <select name="order[billing_address][pref]">
+      <option value="">選択してください</option>
+      <option>東京都</option><option>神奈川県</option><option>大阪府</option><option>愛知県</option>
+      <option>北海道</option><option>福岡県</option><option>沖縄県</option>
+    </select>
+  </div>
+  <div class="row"><label>住所1（市区町村・番地）</label><input name="order[billing_address][addr01]"></div>
+  <div class="row"><label>住所2（建物名など）</label><input name="order[billing_address][addr02]"></div>
+  <div class="row radio-row">
+    <label><input type="radio" name="order[payment_kind]" value="credit_card" style="width:auto"> クレジットカード</label>
+    <label><input type="radio" name="order[payment_kind]" value="cod" style="width:auto"> 後払い</label>
+  </div>
+
+  <!-- ============================================================
+       ▼ ecforce 実環境では ecforce/orders_new_autofill.html の
+         スクリプトを orders/new テンプレートの </form> 直前に設置する。
+         以下はそれと同一のもの＋テスト用の緑枠表示。
+       ============================================================ -->
+  <script>
+  (function(){
+    var p = new URLSearchParams(location.search);
+    if (!p.get('from_chatbot')) return;
+    function fill(name) {
+      var val = p.get(name);
+      if (!val) return;
+      var el = document.querySelector('[name="' + name + '"]');
+      if (!el) return;
+      el.value = val;
+      ['input','change'].forEach(function(ev){ el.dispatchEvent(new Event(ev, {bubbles:true})); });
+      el.classList.add('filled');  // ★モック専用：視覚確認用（本番スクリプトには無い）
+    }
+    [
+      'order[billing_address][name01]',
+      'order[billing_address][name02]',
+      'order[email]',
+      'order[password]',
+      'order[billing_address][tel01]',
+      'order[billing_address][tel02]',
+      'order[billing_address][tel03]',
+      'order[customer][birth_year]',
+      'order[customer][birth_month]',
+      'order[customer][birth_day]',
+      'order[billing_address][zipcode01]',
+      'order[billing_address][zipcode02]',
+      'order[billing_address][pref]',
+      'order[billing_address][addr01]',
+      'order[billing_address][addr02]'
+    ].forEach(fill);
+    var payKind = p.get('order[payment_kind]');
+    if (payKind) {
+      var el = document.querySelector('[name="order[payment_kind]"][value="' + payKind + '"]');
+      if (el) { el.checked = true; el.parentElement.style.outline = '2px solid #7bc47f'; }
+    }
+  })();
+  </script>
+</form>
+</body>
+</html>

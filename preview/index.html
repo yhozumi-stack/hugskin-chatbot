@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】偽LP — HugSkin チャットボット動作確認用</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; margin: 0; color: #333; }
+  .hero { background: linear-gradient(135deg, #f9f1f4, #f0d9e2); padding: 60px 20px; text-align: center; }
+  .hero h1 { color: #a86880; font-size: 28px; }
+  section { max-width: 640px; margin: 0 auto; padding: 40px 20px; line-height: 1.9; }
+  .cta { display: inline-block; background: #C8869A; color: #fff; padding: 14px 40px; border-radius: 99px; text-decoration: none; font-weight: 600; }
+  .spacer { height: 60vh; background: repeating-linear-gradient(#fff, #fff 59px, #f5f5f5 60px); display:flex; align-items:center; justify-content:center; color:#bbb; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>HugSkin C10 ALL IN SERUM</h1>
+  <p>これはチャットボット動作確認用の偽LPです</p>
+  <a href="#" class="cta" data-hs-open>今すぐ注文する</a>
+</div>
+
+<section>
+  <h2>ダミーコンテンツ</h2>
+  <p>スクロール起動（autoOpen: 'scroll30'）のテスト用に長さを確保しています。
+     上のCTAボタンは data-hs-open 属性でチャットを開くフックのテストです。</p>
+</section>
+<div class="spacer">（スクロール領域）</div>
+<section>
+  <p>ページ末尾。</p>
+</section>
+
+<!-- ▼▼ ここが ecforce タグ管理に貼るタグと同じ構造 ▼▼ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'standard',
+  vars: {
+    PRODUCT: 'HugSkin C10 ALL IN SERUM',
+    PRICE:   '初回限定 1,980円（税込）',
+    OFFER:   '初回限定',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  opening: { image: '', stockCheck: true, stockGifUrl: '' },
+  /* プレビューでは転記先をモック注文フォームに向ける */
+  ecforceOrderUrl: './orders_new_mock.html',
+};
+</script>
+<script src="../chatbot.js" defer></script>
+<!-- ▲▲ ここまで ▲▲ -->
+
+</body>
+</html>

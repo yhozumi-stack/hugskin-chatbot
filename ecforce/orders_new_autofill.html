@@ -1,0 +1,52 @@
+<!-- ============================================================
+  ecforce 注文ページ（orders/new）自動入力スクリプト（正本）
+  ------------------------------------------------------------
+  設置場所: ecforce 管理画面 > テーマ管理 > orders/new テンプレート
+            の </form> 直前
+
+  チャットボットから ?from_chatbot=1 付きで遷移してきた時だけ動き、
+  URLパラメータの値を注文フォームに自動入力する。
+
+  ⚠️ v2からの修正点:
+    - order[password] の自動入力を追加（v2は渡すだけで埋めていなかった）
+    - 生年月日 order[customer][birth_year/month/day] の自動入力を追加（同上）
+  ⚠️ フィールド名はテーマカスタマイズで変わる場合がある。
+     設置前に実フォームの name 属性と照合すること（残タスク）。
+     生年月日が <select> の場合も .value 代入で動く想定だが要実機確認。
+============================================================ -->
+<script>
+(function(){
+  var p = new URLSearchParams(location.search);
+  if (!p.get('from_chatbot')) return;
+  function fill(name) {
+    var val = p.get(name);
+    if (!val) return;
+    var el = document.querySelector('[name="' + name + '"]');
+    if (!el) return;
+    el.value = val;
+    ['input','change'].forEach(function(ev){ el.dispatchEvent(new Event(ev, {bubbles:true})); });
+  }
+  [
+    'order[billing_address][name01]',
+    'order[billing_address][name02]',
+    'order[email]',
+    'order[password]',
+    'order[billing_address][tel01]',
+    'order[billing_address][tel02]',
+    'order[billing_address][tel03]',
+    'order[customer][birth_year]',
+    'order[customer][birth_month]',
+    'order[customer][birth_day]',
+    'order[billing_address][zipcode01]',
+    'order[billing_address][zipcode02]',
+    'order[billing_address][pref]',
+    'order[billing_address][addr01]',
+    'order[billing_address][addr02]'
+  ].forEach(fill);
+  var payKind = p.get('order[payment_kind]');
+  if (payKind) {
+    var el = document.querySelector('[name="order[payment_kind]"][value="' + payKind + '"]');
+    if (el) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles:true})); }
+  }
+})();
+</script>

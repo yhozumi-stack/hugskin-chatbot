@@ -1,0 +1,38 @@
+<!-- ============================================================
+  HugSkin 獲得チャットボット 埋め込みタグ（正本）
+  ------------------------------------------------------------
+  ecforce 管理画面 > タグ管理 でこのタグを登録し、対象LPに適用する。
+
+  ▼ LPごとに変えていいのは window.HS_CHAT の中身だけ。
+    （価格・オファー・起動方法・画像などはここで設定＝push不要・即時反映）
+  ▼ src の ?v= はバージョン固定。chatbot.js を更新したら、
+    反映させたいLPのタグの ?v= の数字を上げる（上げないLPは旧版のまま）
+  ▼ 配信URL: https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'standard',
+  vars: {
+    PRODUCT: 'HugSkin C10 ALL IN SERUM',
+    PRICE:   '初回限定 1,980円（税込）',
+    OFFER:   '初回限定',
+  },
+  mode: 'float',            // 'float'=右下フローティング / 'inline'=LP内埋め込み
+  autoOpen: 'immediate',    // 'immediate' / 'scroll30' / 'delay3000' / 'manual'
+  opening: {
+    image: '',              // 冒頭画像URL（空なら非表示）
+    stockCheck: true,       // 「ご案内枠を確認中…」演出
+    stockGifUrl: '',        // 演出をGIFにする場合のURL
+  },
+  // ▼ 質問しない項目（ecforce側は必須だがチャットでは聞かず、ダミー値で転記する）
+  //    LPごとに自由に設定可。詳細・注意点は CLAUDE.md レシピ9
+  // skip: {
+  //   password:  'auto',            // ランダム生成
+  //   birthdate: '1990/01/01',      // 固定ダミー
+  //   tel:       '09000000000',     // 固定ダミー（※後払い審査に影響し得る）
+  //   email:     'auto',            // 毎回ユニークなダミー（※確認メール届かなくなる）
+  // },
+  // ecforceOrderUrl: 'https://hugskin.shop/shop/orders/new',  // 既定値のままなら省略可
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=1" defer></script>
