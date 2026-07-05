@@ -158,3 +158,20 @@ theme: { brand: '#C8869A', brandDark: '#a86880', brandLight: '#f9f1f4' },
 theme: { brand: '#6f4c39', brandDark: '#573a2b', brandLight: '#f6f2ee' },
 ```
 brand=ヘッダー/ボタン/自分の吹き出し、brandDark=ホバー/プログレスバー、brandLight=チャット背景。
+
+## 法対応まわり(v3.17.0〜)
+
+```js
+/* 確認画面の利用規約チェックボックス(既定=表示・チェック済) */
+summaryOptions: { agree: 'unchecked' },   /* 未チェックで開始したい場合 */
+summaryOptions: { agree: false },         /* 非表示にする場合 */
+agreeText: '利用規約に同意します。',        /* 文言を変える場合(改行は\n) */
+agreeLink: '',                             /* 「利用規約」のリンクを消す場合 */
+
+/* 入力欄の下の注意書き(キー=項目key)。メール欄には既定で
+   「ご購入前後のお客様にお得な情報をお送りする可能性がございます。」が入っている */
+fieldNotes: { email: '別の文言にしたい場合はここ' },
+fieldNotes: { email: '' },                 /* 消す場合 */
+```
+チェックが外れている間は確定ボタンが押せない。チャットで同意済みの場合のみ、
+LP側の同意チェック(input[name=agree])にも自動で反映される。
