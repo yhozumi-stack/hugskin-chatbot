@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.8.0
+    HugSkin 獲得チャットボット v3.9.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -329,6 +329,9 @@ var CSS = ''
 + '.pg{height:4px;background:rgba(0,0,0,.08);flex-shrink:0}'
 + '.pg-fill{height:100%;background:' + CFG.theme.brandDark + ';transition:width .4s cubic-bezier(.4,0,.2,1);width:0}'
 + '.msgs{flex:1;overflow-y:auto;padding:14px 12px 22px;display:flex;flex-direction:column;gap:9px;overscroll-behavior:contain}'
+/* ⚠️重要: flexの仕様でoverflow:hiddenを持つ子(確認カード等)が高さ0に潰されるのを防ぐ。
+   これが無いと確認画面が「高さ1px」になり、止まったように見える(2026-07-05実障害) */
++ '.msgs>*{flex-shrink:0}'
 + '.inline-box .msgs{max-height:none;overflow:visible}'
 + '.row{display:flex;align-items:flex-end;gap:8px;animation:hsUp .18s ease both}'
 + '.row.user{flex-direction:row-reverse}'
@@ -356,6 +359,10 @@ var CSS = ''
 + '.card input:focus,.card select:focus{border-color:' + CFG.theme.brand + ';background:#fff}'
 + '.two{display:grid;grid-template-columns:1fr 1fr;gap:9px}'
 + '.three{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px}'
++ '.pick3{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:8px}'
++ '.pick{height:158px;overflow-y:auto;border:1px solid rgba(0,0,0,.14);border-radius:8px;background:#fdfbfc;overscroll-behavior:contain}'
++ '.pick button{display:block;width:100%;padding:8px 4px;border:none;background:none;font-size:14.5px;font-family:inherit;color:#3a2a30;cursor:pointer;text-align:center}'
++ '.pick button.on{background:' + CFG.theme.brand + ';color:#fff;border-radius:6px}'
 + '.mail-sug{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}'
 + '.sug{background:#fff;border:1px solid ' + CFG.theme.brand + ';color:' + CFG.theme.brand + ';border-radius:8px;padding:6px 10px;font-size:12px;font-family:inherit;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis}'
 + '.sug:active{background:' + CFG.theme.brandLight + '}'
@@ -888,50 +895,70 @@ function renderFields(s, i) {
   maybeFocus(card.querySelector('input,select'));
 }
 
-/* 生年月日カード: 年/月/日のプルダウン選択式(年の初期値はシナリオのdefaultYear) */
+/* 生年月日カード: 年/月/日の数字リストが最初から見えるスクロール選択式。
+   年はdefaultYear(1992)が選択済み+リスト中央に表示。月と日を選ぶと自動で次へ進む */
 function renderBirth(s, i) {
   botBubble(s.intro);
   var card = document.createElement('div');
   card.className = 'card';
-  var defYear = s.defaultYear || 1992;
-  var yOpts = '<option value="">年</option>';
-  for (var y = 1930; y <= 2010; y++) {
-    yOpts += '<option value="' + y + '"' + (y === defYear ? ' selected' : '') + '>' + y + '</option>';
-  }
-  var mOpts = '<option value="">月</option>';
-  for (var m = 1; m <= 12; m++) mOpts += '<option value="' + m + '">' + m + '</option>';
-  var dOpts = '<option value="">日</option>';
-  for (var d = 1; d <= 31; d++) dOpts += '<option value="' + d + '">' + d + '</option>';
-
   card.innerHTML =
-      '<div class="fld"><label>生年月日</label><div class="three">'
-    + '<select id="bd-y">' + yOpts + '</select>'
-    + '<select id="bd-m">' + mOpts + '</select>'
-    + '<select id="bd-d">' + dOpts + '</select>'
+      '<div class="fld"><label>生年月日（タップで選択）</label><div class="pick3">'
+    + '<div class="pick" id="pk-y"></div><div class="pick" id="pk-m"></div><div class="pick" id="pk-d"></div>'
     + '</div></div>'
     + '<button class="go">次へ →</button>';
   msgsEl.appendChild(card); scrollBottom();
 
-  var selY = card.querySelector('#bd-y'), selM = card.querySelector('#bd-m'), selD = card.querySelector('#bd-d');
-
-  /* 修正時のプリフィル */
+  var sel = { y: null, m: null, d: null };
   if (prefill.birthdate) {
     var p = prefill.birthdate.split('/');
-    if (p.length === 3) { selY.value = String(+p[0]); selM.value = String(+p[1]); selD.value = String(+p[2]); }
+    if (p.length === 3) { sel.y = +p[0]; sel.m = +p[1]; sel.d = +p[2]; }
     delete prefill.birthdate;
   }
+  if (!sel.y) sel.y = s.defaultYear || 1992;   // 年は初期選択済み
 
-  card.querySelector('.go').addEventListener('click', function () {
+  function buildCol(el, from, to, unit, key) {
+    for (var v = from; v <= to; v++) {
+      (function (val) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = val + unit;
+        if (sel[key] === val) b.className = 'on';
+        b.addEventListener('click', function () {
+          var btns = el.querySelectorAll('button');
+          for (var x = 0; x < btns.length; x++) btns[x].className = '';
+          b.className = 'on';
+          sel[key] = val;
+          maybeDone();
+        });
+        el.appendChild(b);
+      })(v);
+    }
+  }
+  var pkY = card.querySelector('#pk-y'), pkM = card.querySelector('#pk-m'), pkD = card.querySelector('#pk-d');
+  buildCol(pkY, 1930, 2010, '年', 'y');
+  buildCol(pkM, 1, 12, '月', 'm');
+  buildCol(pkD, 1, 31, '日', 'd');
+
+  /* 選択済みの値をリスト中央に見せる */
+  [pkY, pkM, pkD].forEach(function (col) {
+    var on = col.querySelector('.on');
+    if (on) col.scrollTop = Math.max(0, on.offsetTop - col.clientHeight / 2 + on.offsetHeight / 2);
+  });
+
+  function submit() {
     clearErrors();
-    if (!selY.value || !selM.value || !selD.value) { showError('生年月日を選択してください'); return; }
-    var v = selY.value + '/' + ('0' + selM.value).slice(-2) + '/' + ('0' + selD.value).slice(-2);
+    if (!sel.y || !sel.m || !sel.d) { showError('生年月日を選択してください'); return; }
+    var v = sel.y + '/' + ('0' + sel.m).slice(-2) + '/' + ('0' + sel.d).slice(-2);
     clearCards();
     answers.birthdate = v;
     userBubble(v, 'birthdate');
     if (!editMode) { doneCount++; progress(); }
     track('step_birth');
     next(i);
-  });
+  }
+  /* 年月日が3つ揃ったら自動で次へ(年は初期選択済みなので月+日タップで進む) */
+  function maybeDone() { if (sel.y && sel.m && sel.d) submit(); }
+  card.querySelector('.go').addEventListener('click', submit);
 }
 
 /* クレジットカード入力カード。
@@ -1085,6 +1112,17 @@ async function renderSummary(s) {
   if (editReturned) botBubble('修正を反映しました✅');
   else if (s.msg) botBubble(s.msg);
   editReturned = false;
+
+  /* 確認画面を出す前にLPフォームへ先に転記する。
+     これによりecforceが実計算した注文内容テーブル(qa-*)が描画され、
+     本物の合計額・特商法文を確認画面に表示できる(手数料の変動等も反映) */
+  var localForm = CFG.transferMode !== 'redirect' ? findLocalForm() : null;
+  if (localForm) {
+    var t = typing();
+    try { resolveSkips(); fillLocalForm(localForm); } catch (e) {}
+    await delay(1200);   // ecforce側のAJAX再計算と住所再セット(900ms)を待つ
+    t.remove();
+  }
   var rows = '';
   /* ご注文内容: ecforceの注文内容テーブル(qa-*)から自動取得。
      商品・価格・オファーが変わってもタグ/シナリオの修正なしで追従する */
