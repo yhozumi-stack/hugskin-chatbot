@@ -1,0 +1,24 @@
+<!-- ============================================================
+  HugSkin チャットボット タグ【2,980円・CTA起動版】
+  ------------------------------------------------------------
+  即起動しない版。LP内の「お得に試してみる」等のCTAボタン
+  (href="#lp-form" のリンク)を押した時にチャットが起動する。
+  ※LPのHTMLは一切触らない。このタグだけで完結。
+  ecforce タグ管理: このまま全部コピーして1つのタグとして登録(位置: body)
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'standard',
+  vars: {
+    /* 商品名・金額は LP から自動取得されるので書かなくてよい */
+    PRICE: '2,980円（税込）',            /* 挨拶文用(消せば価格文言なし) */
+  },
+  mode: 'float',
+  autoOpen: 'manual',                    /* 自動起動しない */
+  openTriggers: 'a[href="#lp-form"]',    /* LPのCTAボタンを押すとチャット起動 */
+  launcher: true,                        /* 右下バナーは表示(false で非表示) */
+  launcherText: '💬 かんたん注文はこちら',
+  opening: { image: '', stockCheck: true },
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=5" defer></script>

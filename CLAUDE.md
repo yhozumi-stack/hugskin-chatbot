@@ -85,8 +85,25 @@ opening: {
 ```
 
 ### レシピ5: 起動タイミングを変える(LP個別・push不要)
-タグの `autoOpen` を変更: `'immediate'`(LP表示と同時) / `'scroll30'`(30%スクロール、数字変更可) / `'delay3000'`(3秒後、ms指定) / `'manual'`(ランチャーボタンのみ)
-LP内の任意のボタンから開く場合は、その要素に `data-hs-open` 属性を付けるだけ。
+タグの `autoOpen` を変更: `'immediate'`(LP表示と同時) / `'scroll30'`(30%スクロール、数字変更可) / `'delay3000'`(3秒後、ms指定) / `'manual'`(自動起動なし)
+
+**⚠️大原則: LPのHTMLは一切触らない。すべてタグ内で完結させる(保積さん指定)**
+
+LP内の既存CTAボタンで起動させたい場合はタグに1行(LP編集不要):
+```js
+openTriggers: 'a[href="#lp-form"]',   // HugSkinのLPはCTAが全部このアンカー
+```
+→ CTA起動版のタグ完成形は `tags/ecforce_tag_1980_cta.html` / `_2980_cta.html` にある
+
+### レシピ5b: フローティングバナー(ランチャー)のカスタム(LP個別・push不要)
+タグで指定:
+```js
+launcher: false,                        // バナー自体を消す
+launcherText: '🎁 初回1,980円で試す',    // 文言変更
+theme: { brand: '#C8869A' },            // 色変更(チャット全体の色と連動)
+```
+※バナーを消す場合は autoOpen か openTriggers のどちらかで開けるようにしておくこと
+(両方ないとチャットを開く手段がなくなる)
 
 ### レシピ6: 価格が違うLPを追加する(push不要)
 1. `tags/ecforce_tag.html` をコピーして `vars.PRICE` 等をそのLP用に書き換え

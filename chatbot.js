@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.9.1
+    HugSkin 獲得チャットボット v3.10.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -48,7 +48,12 @@ var DEFAULTS = {
   },
   title: 'お申し込みサポート',
   subtitle: 'かんたん注文チャット（約1分）',
-  launcherText: '💬 かんたん注文はこちら',
+  launcher: true,                  // false = 右下のフローティングバナー(ランチャー)を出さない
+  launcherText: '💬 かんたん注文はこちら',   // バナーの文言(自由に変更可)
+  /* LP内の既存ボタンをチャット起動ボタンにするCSSセレクタ(LPのHTML編集不要)。
+     例: openTriggers: 'a[href="#order"], .cta_btn'
+     → そのボタンのクリックでチャットが開く(元のリンク動作はキャンセルされる) */
+  openTriggers: '',
   typingMs: 120,                   // ボット発話前の「間」。0で完全即時
   /* 転記モード:
      'auto'     = LP内にecforce注文フォームがあれば直接入力(推奨・スクリプト設置不要)、
@@ -462,11 +467,13 @@ function mount() {
     return;
   }
   document.body.appendChild(host);
-  launcherEl = document.createElement('button');
-  launcherEl.className = 'launcher';
-  launcherEl.textContent = CFG.launcherText;
-  launcherEl.addEventListener('click', function () { interacted = true; openPanel(); });
-  wrap.appendChild(launcherEl);
+  if (CFG.launcher !== false) {
+    launcherEl = document.createElement('button');
+    launcherEl.className = 'launcher';
+    launcherEl.textContent = CFG.launcherText;
+    launcherEl.addEventListener('click', function () { interacted = true; openPanel(); });
+    wrap.appendChild(launcherEl);
+  }
 
   /* メール既登録エラーで戻ってきた画面では、設定に関わらず自動で開いて案内する */
   if (detectDupEmailError()) return openPanel();
@@ -484,9 +491,14 @@ function mount() {
       if (sc >= pct) { fired = true; window.removeEventListener('scroll', onSc); openPanel(); }
     }, { passive: true });
   }
-  /* LP内の任意の要素から開けるフック: <a data-hs-open>今すぐ注文</a> */
+  /* LP内の既存ボタンをチャット起動トリガーにする(タグのopenTriggersにCSSセレクタを書くだけ。
+     LPのHTMLは一切触らない方針)。data-hs-open属性も互換のため残すが非推奨 */
   document.addEventListener('click', function (e) {
-    var t = e.target && e.target.closest && e.target.closest('[data-hs-open]');
+    if (!e.target || !e.target.closest) return;
+    var t = e.target.closest('[data-hs-open]');
+    if (!t && CFG.openTriggers) {
+      try { t = e.target.closest(CFG.openTriggers); } catch (err) { /* セレクタ不正は無視 */ }
+    }
     if (t) { e.preventDefault(); interacted = true; openPanel(); }
   });
 }
