@@ -125,8 +125,12 @@ skip: {
 `hs_chat_open`(立ち上がり) / `hs_chat_step_名前`(各ステップ完了) / `hs_chat_summary_view`(確認画面) / `hs_chat_submit`(転記) / `hs_chat_close`
 → ボットの立ち上がり率・ステップ離脱はClarityでこのイベントをフィルタして見る。
 
+## デプロイ情報
+- リポジトリ: https://github.com/yhozumi-stack/hugskin-chatbot (public)
+- 配信URL: `https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js`(push後1〜2分で反映)
+
 ## 残タスク(2026-07-05時点)
+- [x] GitHub リポジトリ作成 + Pages 有効化 + `tags/ecforce_tag.html` のURL確定(2026-07-05完了)
 - [ ] **ecforce実フォーム照合**: 本番 `https://hugskin.shop/shop/orders/new` の name 属性一覧を取得し、`transfer()` と `ecforce/orders_new_autofill.html` のフィールド名と照合(特に生年月日がselectか、後払いの `payment_kind` の値が `cod` か)
-- [ ] GitHub リポジトリ作成 + Pages 有効化 + `tags/ecforce_tag.html` のURL確定
 - [ ] orders/new テンプレートへの自動入力スクリプト設置(ecforce管理画面)
 - [ ] 本番LPでのモバイル実機確認
