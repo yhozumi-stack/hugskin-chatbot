@@ -212,6 +212,13 @@ hideForm: true,
 - クレカ+自動送信(標準運用)のお客様は、フォームを一度も見ずに注文完了する
 - 動作確認は `preview/hideform_test.html`
 
+## カゴ落ちタグ(nogasazu)との連携(v3.22.0〜)
+- **iframeタグは不要**(form-plus時代の遺物。あれはチャットがiframe内にあったから必要だった。今のチャットはページ内直描画なので入れる場所自体が無い)
+- **LPタグ・CVタグは従来どおり設置でOK**(nogasazu側の設定変更も不要)
+- チャットの入力欄はShadow DOM内でLP側の計測タグから**見えない**。その代わりエンジンが**メール・電話の確定と同時にLPフォームの実フィールドへ即転記**する(earlyLeadCapture)ので、nogasazuのLPタグ(`order[billing_address_attributes][tel01]`等のセレクタ)がその瞬間に捕捉する=**チャット途中離脱もカゴ落ち捕捉できる**(form-plusのiframeタグ相当の挙動)
+- hideForm(レシピ16)と併用可(非表示フィールドでも値と input イベントは発火するため捕捉される)
+- ⚠️skip機能でemail/telをダミーにしているLPでは、カゴ落ちメール/SMSがダミー宛てに飛ぶ(=届かない)。カゴ落ち施策を効かせたいLPではemail/telは聞くこと
+
 ## 計測(Clarity / GTM)
 エンジンが自動で以下のイベントを発火する(Clarityカスタムイベント + dataLayer):
 `hs_chat_open`(立ち上がり) / `hs_chat_step_名前`(各ステップ完了) / `hs_chat_summary_view`(確認画面) / `hs_chat_submit`(転記) / `hs_chat_close`

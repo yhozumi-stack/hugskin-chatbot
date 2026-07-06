@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.21.1
+    HugSkin 獲得チャットボット v3.22.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -808,7 +808,25 @@ function summaryIndex() {
 /* ステップ完了後の遷移。通常は次へ、修正モードなら元いた場所へ直帰する。
    例外: 郵便番号を修正した時は住所確認を、支払いをクレジットに変えた時は
    カード入力(未入力なら)を挟んでから戻る */
+/* カゴ落ちタグ(nogasazu等)連携: メール・電話が確定した時点で、その2項目だけ即LPフォームへ転記する。
+   チャット入力欄はShadow DOM内でLP側の計測タグから見えないため、LPフォームの実フィールドを
+   「入力され次第」埋めることで、チャット途中離脱でもカゴ落ち捕捉が効くようにする(form-plusのiframeタグ相当)。
+   テキスト欄のinputイベントのみ発火=ecforceのAJAX再描画は誘発しない(v3.9.1の教訓に準拠) */
+function earlyLeadCapture() {
+  try {
+    if (CFG.transferMode === 'redirect') return;
+    var form = findLocalForm();
+    if (!form) return;
+    if (answers.email) {
+      setField(form, 'order[email]', answers.email);
+      setField(form, 'order[customer_attributes][email]', answers.email);
+    }
+    if (answers.tel) setField(form, 'order[billing_address_attributes][tel01]', answers.tel);
+  } catch (e) {}
+}
+
 function next(i) {
+  earlyLeadCapture();
   var s = steps[i];
   if (editMode) {
     if (s.type === 'zip') {
