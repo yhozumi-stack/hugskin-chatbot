@@ -1,0 +1,33 @@
+# 離脱分析ダッシュボードのデータ更新
+# 毎朝5時(JST)にGA4からチャットボットイベントを取得し、
+# スプレッドシートのdataタブを直近3日分洗い替えで更新する。
+name: Analytics
+
+on:
+  schedule:
+    - cron: '0 20 * * *'   # 20:00 UTC = 5:00 JST
+  workflow_dispatch:
+    inputs:
+      backfill_days:
+        description: '遡って取り直す日数'
+        default: '3'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 依存インストール
+        run: pip install --quiet gspread google-auth google-analytics-data
+      - name: SA鍵を配置
+        run: echo "$GA4_SA_KEY" > analytics/service_account.json
+        env:
+          GA4_SA_KEY: ${{ secrets.GA4_SA_KEY }}
+      - name: GA4 → スプレッドシート
+        run: python analytics/pull_ga4.py "${{ github.event.inputs.backfill_days || '3' }}"
+        env:
+          GA4_PROPERTY_ID: ${{ vars.GA4_PROPERTY_ID }}
+          SHEET_ID: ${{ vars.SHEET_ID }}

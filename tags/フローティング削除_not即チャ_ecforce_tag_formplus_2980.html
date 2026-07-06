@@ -1,0 +1,37 @@
+<!-- ============================================================
+  HugSkin チャットボット タグ【form-plus完全再現・2,980円LP用】
+  ------------------------------------------------------------
+  文言・質問のまとめ方・クレカ訴求画像・後払い規約・カウントダウン・
+  確認モーダルまで form-plus と同等(+金額はecforce実計算で正確)。
+  ecforce タグ管理: このまま全部コピーして1つのタグとして登録(位置: body)
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus',                  /* form-plus再現シナリオ */
+  vars: {
+    PRICE: '2,980円（税込）',            /* 挨拶では未使用(formplusは名前質問が冒頭)。残してOK */
+  },
+  mode: 'float',
+  autoOpen: 'manual',                    /* 初回自動起動なし */
+  openTriggers: 'a[href="#lp-form"]',    /* CTAボタンでオープン */
+  launcher: false,                       /* フローティングバナーを非表示 */
+  countdown: true,                       /* カウントダウンバー */
+  summaryOptions: { modal: true },       /* 確認画面をモーダルで */
+  stepImages: {                          /* 支払い質問の直前にクレカ訴求画像 */
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {                       /* 支払いボタンの表示文言 */
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（コンビニ後払い）',
+  },
+  opening: {
+    images: [                            /* 冒頭画像(不要なら2行とも削除) */
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+  /* 後払い規約文(codNotice)は既定で同梱済みなので書かなくてよい */
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=13" defer></script>
