@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.18.0
+    HugSkin 獲得チャットボット v3.19.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -452,7 +452,7 @@ var CSS = ''
 + 'border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.28);'
 + 'animation:hsIn .22s ease both}'
 + '@keyframes hsIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}'
-+ '@media (max-width:480px){.panel{right:0;bottom:0;width:100vw;height:min(88dvh,640px);border-radius:16px 16px 0 0}}'
++ '@media (max-width:480px){.panel{top:0;left:0;right:0;bottom:0;width:100vw;height:100dvh;border-radius:0}}'
 /* --- インライン --- */
 + '.inline-box{display:flex;flex-direction:column;background:' + CFG.theme.brandLight + ';border-radius:14px;overflow:hidden;border:1px solid rgba(0,0,0,.07)}'
 /* --- 共通チャットUI --- */
