@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.20.0
+    HugSkin 獲得チャットボット v3.21.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -94,6 +94,11 @@ var DEFAULTS = {
                   なければ ecforceOrderUrl へリダイレクト
      'redirect' = 常にリダイレクト(カート型ページ用) */
   transferMode: 'auto',
+  /* LPの注文フォームをチャットが隠す(skipのダミー値を表に出さない用途。LPのHTMLは触らない)。
+     必要な場面では自動で再表示する:
+     ・後払い選択時(同意チェック+注文ボタンは本人操作のため) ・autoSubmit無効/転記エラー時
+     ・チャットを×で閉じた時 ・ecforceがエラーで弾き返した画面では最初から隠さない */
+  hideForm: false,
   /* チャット完了時にLPの注文ボタンを自動で押して確認画面まで進むか。
      ⚠️ LPが「確認画面を表示しない」設定の場合は即注文確定になるため false にすること。
      後払い(同意チェックが必要)の時は auto でも自動送信せず、チェックをお願いする案内になる */
@@ -637,12 +642,16 @@ function openPanel() {
 function closePanel() {
   if (panelEl) panelEl.style.display = 'none';
   if (launcherEl) launcherEl.style.display = 'flex';
+  showLpForm();   // hideForm利用時: チャットを閉じたらフォームを出す(注文導線を潰さない)
   track('close');
 }
 
 function mount() {
   /* 商品名が未設定ならLPから自動取得(商品が変わってもタグ・シナリオの修正不要) */
   if (!CFG.vars.PRODUCT) CFG.vars.PRODUCT = readProductName();
+
+  /* hideForm: LPの注文フォームを隠す(エラー画面では隠さない。詳細はDEFAULTSのコメント) */
+  try { hideLpForm(); } catch (eHide) {}
 
   if (CFG.mode === 'inline') {
     var target = document.querySelector(CFG.inlineSelector);
@@ -1699,6 +1708,39 @@ function findLocalForm() {
   return el ? (el.form || el.closest('form')) : null;
 }
 
+/* --- hideForm: LPフォームの隠す/出す(タグ内完結・LPのHTMLは触らない) --- */
+var lpFormHidden = false;
+function hasVisibleFormError(f) {
+  try {
+    var els = f.querySelectorAll('[class*="error"], [class*="alert"]');
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].offsetParent && (els[i].innerText || '').trim()) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+function hideLpForm() {
+  if (lpFormHidden || CFG.hideForm !== true || CFG.transferMode === 'redirect') return;
+  var f = findLocalForm();
+  if (!f) return;
+  if (detectDupEmailError()) return;   // 既登録エラー画面では隠さない(案内チャットが自動で開く)
+  if (hasVisibleFormError(f)) return;  // ecforceのエラー表示中は隠さない(お客様が直せるように)
+  f.setAttribute('data-hs-hide', '1');
+  if (!document.getElementById('hs-hide-style')) {
+    var st = document.createElement('style');
+    st.id = 'hs-hide-style';
+    st.textContent = 'form[data-hs-hide="1"]{display:none!important}';
+    document.head.appendChild(st);
+  }
+  lpFormHidden = true;
+}
+function showLpForm() {
+  if (!lpFormHidden) return;
+  var f = document.querySelector('form[data-hs-hide="1"]');
+  if (f) f.removeAttribute('data-hs-hide');
+  lpFormHidden = false;   // 一度出したら再び隠さない(後払いの同意操作等を邪魔しないため)
+}
+
 /* フィールドへ値を設定。
    ⚠️イベントは最小限にする: ecforceはchangeイベントでAJAX再計算・セクション再描画を
    行うため、全項目でchangeを乱発するとAJAXが競合してセレクトが初期値に巻き戻る
@@ -1783,6 +1825,7 @@ function transfer() {
       if (window.dataLayer) window.dataLayer.push({ event: 'hs_chat_error', hs_error: 'transfer: ' + String((err && err.message) || err).slice(0, 200) });
       if (window.clarity) window.clarity('event', 'hs_chat_error');
     } catch (e2) {}
+    showLpForm();   // 「下のフォームから直接」案内の前に必ずフォームを出す
     botBubble('申し訳ありません、転記中にエラーが発生しました🙏\nお手数ですが、下のフォームから直接ご注文いただくか、\nページを再読み込みしてもう一度お試しください');
     var sbtn = wrap.querySelector('.sum .go');
     if (sbtn) { sbtn.disabled = false; sbtn.textContent = 'もう一度試す →'; }
@@ -1800,6 +1843,14 @@ function transferInner() {
     if (!prefilled) fillLocalForm(localForm);
     track('fill_local');
     var sbtn = wrap.querySelector('.sum .go');
+
+    /* hideForm利用時: クレカ×自動送信で完結するとき以外は、ここでフォームを出す。
+       ⚠️後払いの同意チェック判定(offsetParent=表示状態を見る)より前に出す必要がある */
+    if (lpFormHidden) {
+      var isCreditH = (answers.payment_label || '').indexOf('クレジット') >= 0;
+      var consentH = localForm.querySelector('[name="order[payment_attributes][source_attributes][consent]"]');
+      if (!CFG.autoSubmit || (!isCreditH && consentH && !consentH.checked)) showLpForm();
+    }
 
     /* 後払いで同意チェックが表示されている場合は自動送信せず、チェックをお願いする */
     var consentEl = localForm.querySelector('[name="order[payment_attributes][source_attributes][consent]"]');

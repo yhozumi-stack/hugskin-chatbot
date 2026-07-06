@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>【プレビュー】偽LP — HugSkin チャットボット動作確認用</title>
+<title>【プレビュー】hideForm テスト — LPフォームを隠す構成</title>
 <style>
   body { font-family: 'Hiragino Sans', sans-serif; margin: 0; color: #333; }
   .hero { background: linear-gradient(135deg, #f9f1f4, #f0d9e2); padding: 60px 20px; text-align: center; }
@@ -143,6 +143,7 @@ window.HS_CHAT = {
   /* vars未指定 → 商品名はLPから自動取得・価格文言の行は自動非表示、のテスト */
   mode: 'float',
   autoOpen: 'immediate',
+  hideForm: true,
   opening: { image: '', stockCheck: true, stockGifUrl: '' },
   /* プレビューでは転記先をモック注文フォームに向ける */
   ecforceOrderUrl: './orders_new_mock.html',
