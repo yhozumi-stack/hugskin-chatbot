@@ -274,6 +274,24 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 - カード情報(17行目)と確認画面(18行目)の通過率の分母は**C16(支払い方法)に固定**(カードはクレカ選択者しか通らないため)。行を挿入・並べ替えするとこの参照がズレるので注意
 - 質問ステップを増減したら: chatbot.js のイベントは `step_<ステップのkey名>` で飛ぶ→ダッシュボードのB列にその名前の行を足す(数式はC7:E19の既存行をコピー)
 
+## 外形監視(UptimeRobot・2026-07-06稼働開始)
+
+二重の監視体制。チャットが止まってもLPフォームは無傷でCVは止まらない設計なので、監視の目的は「早く気づいて機会損失を最小にする」こと。
+
+| 監視 | 間隔 | 通知先 | 実体 |
+|---|---|---|---|
+| UptimeRobot(外部) | 5分 | メール + Slack #hugskin_chatbot_alert | chatbot.js配信URL と hugskin.shop の2モニター |
+| healthcheck.yml(GitHub内) | 6時間 | GitHubからオーナーへメール | GitHub自体の障害時はこちらも止まる点に注意 |
+
+- UptimeRobotアカウント: y.hozumi@triber.co.jp(**無料プラン**。ダッシュボード= https://dashboard.uptimerobot.com/monitors )
+- **⚠️無料プランの制約**: Slack/Webhook連携・通知先メールの追加(Team members)は全部有料限定。そのため**Slack通知はGmail転送フィルタで実現**している:
+  - 経路: UptimeRobot → y.hozumi@triber.co.jp のGmail → フィルタ(From: `uptimerobot.com`)→ Slackチャンネル専用アドレスへ自動転送 → #hugskin_chatbot_alert
+  - Gmail側の設定場所: 設定 > メール転送とPOP/IMAP(転送先登録)+ フィルタとブロック中のアドレス(From条件の転送フィルタ)
+  - **この転送フィルタを消すとSlack通知が止まる**(メール通知は残る)
+- 公開ステータスページは意図的にOFF(社内監視用途のため。必要になれば Status pages メニューから作成可)
+- 通知テスト: モニター詳細画面の「Test Notification」ボタン(Slack着弾まで確認済み 2026-07-06)
+- モニターURLは全LP共通のchatbot.js 1本で足りる(LP追加時に監視の追加は不要)
+
 ## デプロイ情報
 - リポジトリ: https://github.com/yhozumi-stack/hugskin-chatbot (public)
 - 配信URL: `https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js`(push後1〜2分で反映)
@@ -284,7 +302,7 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 - [x] ecforceタグ管理へのタグ登録 + テストLP適用 + 後払いテスト注文成功(2026-07-06完了)
 - [x] 離脱分析ダッシュボード構築(2026-07-06完了。GTM→GA4→シート日次更新。上の「離脱分析ダッシュボード」章を参照)
 - [x] 本番LPへのタグ展開 + 実機確認(2026-07-06完了、**本番CV確認済み**)
+- [x] UptimeRobot設定(2026-07-06完了。chatbot.js/hugskin.shopを5分間隔監視。無料プランはSlack直結不可のためGmail転送フィルタ経由で#hugskin_chatbot_alertへ通知。下記「外形監視」章を参照)
 - [ ] ダッシュボードの実データでの表示確認(2026-07-07朝以降、シートを開くだけ)
-- [ ] UptimeRobot設定(chatbot.js URLの5分間隔監視+Slack通知。保積さんのアカウント作成から)
 - [ ] 本番form-plusの金額設定確認(確認モーダルの静的金額1,980円 vs ecforce実計算2,980円のズレを2026-07-06に発見済み)
 - [ ] (モードB利用時のみ) 遷移先テンプレートへの自動入力スクリプト設置
