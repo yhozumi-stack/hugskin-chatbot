@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.21.0
+    HugSkin 獲得チャットボット v3.21.1
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -1740,6 +1740,19 @@ function showLpForm() {
   if (f) f.removeAttribute('data-hs-hide');
   lpFormHidden = false;   // 一度出したら再び隠さない(後払いの同意操作等を邪魔しないため)
 }
+/* 「フォームを出したと仮定した時に、その同意チェックは実際に見えるか」を判定。
+   ⚠️LPにはAmazon Pay等、選択中でない決済区画の隠れた同意チェックも存在する
+   (2026-07-06 実LPで確認: consentは1個だけでAmazon Pay区画内=後払いでは非表示)。
+   存在だけで判定するとその隠れチェックに反応して不要にフォームを出してしまう。
+   同期的に戻すので画面には一切描画されない */
+function consentWouldBeVisible(consentEl) {
+  var f = document.querySelector('form[data-hs-hide="1"]');
+  if (!f) return !!consentEl.offsetParent;
+  f.removeAttribute('data-hs-hide');
+  var vis = !!consentEl.offsetParent;
+  f.setAttribute('data-hs-hide', '1');
+  return vis;
+}
 
 /* フィールドへ値を設定。
    ⚠️イベントは最小限にする: ecforceはchangeイベントでAJAX再計算・セクション再描画を
@@ -1845,11 +1858,13 @@ function transferInner() {
     var sbtn = wrap.querySelector('.sum .go');
 
     /* hideForm利用時: クレカ×自動送信で完結するとき以外は、ここでフォームを出す。
-       ⚠️後払いの同意チェック判定(offsetParent=表示状態を見る)より前に出す必要がある */
+       ⚠️後払いの同意チェック判定(offsetParent=表示状態を見る)より前に出す必要がある。
+       同意チェックは「フォームを出せば実際に見えるもの」だけを対象にする
+       (Amazon Pay等、非選択決済の隠れチェックには反応しない=同意欄が無い後払いは隠したまま自動送信) */
     if (lpFormHidden) {
       var isCreditH = (answers.payment_label || '').indexOf('クレジット') >= 0;
       var consentH = localForm.querySelector('[name="order[payment_attributes][source_attributes][consent]"]');
-      if (!CFG.autoSubmit || (!isCreditH && consentH && !consentH.checked)) showLpForm();
+      if (!CFG.autoSubmit || (!isCreditH && consentH && !consentH.checked && consentWouldBeVisible(consentH))) showLpForm();
     }
 
     /* 後払いで同意チェックが表示されている場合は自動送信せず、チェックをお願いする */
