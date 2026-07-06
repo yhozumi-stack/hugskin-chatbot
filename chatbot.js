@@ -1,5 +1,5 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.19.0
+    HugSkin 獲得チャットボット v3.20.0
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -105,6 +105,10 @@ var DEFAULTS = {
      例: paymentLabels: { 'クレジット': 'クレジットカード【手数料0円】' }
      ⚠️変更後の文言にも「クレジット」「後払い」の語は残すこと(カード入力・規約表示の判定に使うため) */
   paymentLabels: {},
+  /* カードのセキュリティコード(CVV)を聞くか:
+     'auto'(既定) = LPのフォームにCVV欄があれば聞く・無ければ聞かない(LP側で欄を削除すれば自動で消える)
+     true  = 常に聞く / false = 常に聞かない */
+  cardCvv: 'auto',
   zipApi: 'https://zipcloud.ibsnet.co.jp/api/search?zipcode=',
 };
 
@@ -841,7 +845,7 @@ function startEdit(key) {
     });
   }
   if (s.type === 'card') {
-    ['card_number', 'card_month', 'card_year', 'card_name'].forEach(function (k) {
+    ['card_number', 'card_month', 'card_year', 'card_name', 'card_sec'].forEach(function (k) {
       if (answers[k] != null) prefill[k] = answers[k];
     });
   }
@@ -1350,10 +1354,20 @@ function renderAddress(s, i) {
 /* クレジットカード入力カード。
    ⚠️ カード情報は確認画面ではマスク表示、リダイレクトモードでは絶対に送らない。
    LP内フォームのカード欄(VeriTrans)に直接転記するだけで、外部送信は一切しない。 */
+/* LP上のセキュリティコード(CVV)欄。ecforce+決済JS(Stripe等)は name="cvv" / #input-cc-cvv、
+   ゲートウェイによっては order[...][security_code] の場合もあるため両対応 */
+var CVV_SELECTOR = '#input-cc-cvv, input[name="cvv"], [name="order[payment_attributes][source_attributes][security_code]"]';
+function wantCvv() {
+  if (CFG.cardCvv === true)  return true;
+  if (CFG.cardCvv === false) return false;
+  return !!document.querySelector(CVV_SELECTOR);   // 'auto' = LPにCVV欄があれば聞く
+}
+
 function renderCard(s, i) {
   botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
+  var askCvv = wantCvv();
   /* 有効期限の年: LP実フォームのselect(下2桁)から選択肢を拝借、無ければ生成 */
   var pageYear = document.querySelector('[name="order[payment_attributes][source_attributes][year]"]');
   var years = [];
@@ -1377,6 +1391,10 @@ function renderCard(s, i) {
     + '<div><select id="cc-month" autocomplete="cc-exp-month">' + mOpts + '</select></div>'
     + '<div><select id="cc-year" autocomplete="cc-exp-year">' + yOpts + '</select></div>'
     + '</div></div>'
+    + (askCvv
+        ? '<div class="fld"><label>セキュリティコード（カード裏面の3〜4桁）</label>'
+        + '<input id="cc-sec" type="password" inputmode="numeric" autocomplete="cc-csc" maxlength="4" placeholder="例：123"></div>'
+        : '')
     + '<div class="fld"><label>カード名義（ローマ字）</label>'
     + '<input id="cc-name" type="text" autocomplete="cc-name" placeholder="例：HANAKO YAMADA"></div>'
     + '<button class="go">次へ →</button>';
@@ -1387,6 +1405,8 @@ function renderCard(s, i) {
   if (prefill.card_month)  { card.querySelector('#cc-month').value = prefill.card_month; delete prefill.card_month; }
   if (prefill.card_year)   { card.querySelector('#cc-year').value = prefill.card_year; delete prefill.card_year; }
   if (prefill.card_name)   { card.querySelector('#cc-name').value = prefill.card_name; delete prefill.card_name; }
+  if (prefill.card_sec && askCvv) { card.querySelector('#cc-sec').value = prefill.card_sec; }
+  delete prefill.card_sec;
 
   card.querySelector('.go').addEventListener('click', function () {
     clearErrors();
@@ -1394,13 +1414,17 @@ function renderCard(s, i) {
     var mo = card.querySelector('#cc-month').value;
     var yr = card.querySelector('#cc-year').value;
     var nm = NORMS.cardName(card.querySelector('#cc-name').value);
-    var err = VALIDATORS.cardNum(num) || (!mo || !yr ? '有効期限を選択してください' : null) || VALIDATORS.cardName(nm);
+    var sec = askCvv ? z2h(card.querySelector('#cc-sec').value).trim() : '';
+    var err = VALIDATORS.cardNum(num) || (!mo || !yr ? '有効期限を選択してください' : null)
+      || (askCvv && !/^\d{3,4}$/.test(sec) ? 'セキュリティコードを入力してください（カード裏面の3〜4桁）' : null)
+      || VALIDATORS.cardName(nm);
     if (err) { showError(err); return; }
     clearCards();
     answers.card_number = num;
     answers.card_month = mo;
     answers.card_year = yr;
     answers.card_name = nm;
+    answers.card_sec = sec;   /* 確認画面・計測・URLには絶対に出さない(LPフォーム転記のみ) */
     userBubble('カード末尾 ' + num.slice(-4) + '　' + mo + '/20' + yr, 'card');
     if (!editMode) { doneCount++; progress(); }
     track('step_card');  /* 値は絶対に送らない */
@@ -1732,8 +1756,13 @@ function fillLocalForm(form, silent) {
     put(form, 'order[payment_attributes][source_attributes][month]', answers.card_month);
     put(form, 'order[payment_attributes][source_attributes][year]', answers.card_year);
     put(form, 'order[payment_attributes][source_attributes][name]', answers.card_name);
-    var sec = form.querySelector('[name="order[payment_attributes][source_attributes][security_code]"]');
-    if (sec && answers.card_sec) put(form, 'order[payment_attributes][source_attributes][security_code]', answers.card_sec);
+    if (answers.card_sec) {
+      var secEl = form.querySelector(CVV_SELECTOR) || document.querySelector(CVV_SELECTOR);
+      if (secEl) {
+        secEl.value = answers.card_sec;
+        if (!silent) secEl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
   }
   /* 後払い同意チェックは意図的に触らない(お客様自身が同意する) */
 
