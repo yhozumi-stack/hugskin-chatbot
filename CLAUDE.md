@@ -199,14 +199,58 @@ skip: {
 `hs_chat_open`(立ち上がり) / `hs_chat_step_名前`(各ステップ完了) / `hs_chat_summary_view`(確認画面) / `hs_chat_submit`(転記) / `hs_chat_close`
 → ボットの立ち上がり率・ステップ離脱はClarityでこのイベントをフィルタして見る。
 
+## 離脱分析ダッシュボード(2026-07-06稼働開始)
+
+データの流れ: **チャット(dataLayer) → GTM(GTM-TRRF8FDN) → GA4 → GitHub Actions(毎朝5時JST) → スプレッドシート**
+
+### 見る場所(URL)
+| 何を見る | URL | アカウント |
+|---|---|---|
+| ファネル表(数字の本命・毎朝5時更新) | https://docs.google.com/spreadsheets/d/1alEw24pSXbbjtwM5RBl8cCXu77ZLHTHJsTsEO70bEwM | y.hozumi1992@gmail.com |
+| GA4リアルタイム(過去30分の動き) | https://analytics.google.com/analytics/web/?authuser=1#/a392481201p534388892/realtime/overview | admin@hugskin.shop |
+| 離脱セッションの録画 | https://clarity.microsoft.com/projects → HugSkinプロジェクト → `hs_chat_*` イベントでフィルタ | — |
+
+- シートの「ダッシュボード」タブ: B3/B4=期間、E3=LP(u=)、E4=シナリオ をセルで切り替えるだけ
+- 「data」タブ: 生データ(date/lp/scenario/event/count/users)。**手で編集しない**(毎朝、直近3日分が洗い替えされる)
+
+### 各種ID(問い合わせ時にそのまま使う)
+- スプレッドシートID: `1alEw24pSXbbjtwM5RBl8cCXu77ZLHTHJsTsEO70bEwM`
+- GA4: プロパティID `534388892` / アカウント `392481201` / 測定ID `G-E8KW5RMQV3`
+- GTM: `GTM-TRRF8FDN`(タグ「GA4 - hs_chat チャットボット計測」+正規表現トリガー `hs_chat_.*`)
+- GA4カスタムディメンション(イベントスコープ): `hs_event` / `hs_page` / `hs_scenario`
+- SA(GA4閲覧者+シート編集者): `ecforce-switcher@hugskin-sheets.iam.gserviceaccount.com`(鍵はGitHub secret `GA4_SA_KEY`。ローカル正本=`Hugskin受注切り替え自動化/ecforce-subscription-switcher/service_account.json`、`analytics/service_account.json` にコピーあり・**gitignore済につきコミット禁止**)
+
+### レシピA: 今すぐ手動でシートを更新する
+```bash
+cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
+gh workflow run analytics.yml            # 直近3日分を洗い替え
+gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取り直す
+```
+
+### レシピB: トラブルシュート(シートが0のまま等)
+1. `gh run list --workflow=analytics.yml --limit 3` で直近実行の成否を見る
+2. ログに `403` / `PERMISSION_DENIED` → GA4のプロパティアクセス管理からSAが消えていないか確認(閲覧者で登録)
+3. 実行成功なのに0行 → 対象期間にLPトラフィックが無いだけの可能性。GA4リアルタイムでスマホからLPを開いて `hs_chat_open` が出るか確認(**PCの自動操作ブラウザはGoogleにボット判定され503で弾かれるので実機で**)
+4. データ蓄積は2026-07-06(GTM公開日)以降のみ。それ以前の日付は永遠に0で正常
+
+### ⚠️ ダッシュボードの数式を壊さないための決まり(重要)
+- dataタブの日付は**文字列**(RAW書込)。数式側は `TEXT($B$3,"YYYY-MM-DD")` の**テキスト比較**で照合している。「日付型に直そう」としてどちらか片方だけ変えると**全集計が0になる**(2026-07-06に実際に踏んだバグ)
+- 通過率は「直前の非ゼロステップ」比: `LOOKUP(2,ARRAYFORMULA(1/(範囲>0)),範囲)`。**LOOKUP内の配列演算はARRAYFORMULA必須**
+- ファネルの行順は本番シナリオ **formplus の質問順**(open→first_time→name→birth→sex→password→zip→addr→contact→payment→card→summary_view→submit)。first_time/sex/passwordはシナリオによって0のままで正常
+- カード情報(17行目)と確認画面(18行目)の通過率の分母は**C16(支払い方法)に固定**(カードはクレカ選択者しか通らないため)。行を挿入・並べ替えするとこの参照がズレるので注意
+- 質問ステップを増減したら: chatbot.js のイベントは `step_<ステップのkey名>` で飛ぶ→ダッシュボードのB列にその名前の行を足す(数式はC7:E19の既存行をコピー)
+
 ## デプロイ情報
 - リポジトリ: https://github.com/yhozumi-stack/hugskin-chatbot (public)
 - 配信URL: `https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js`(push後1〜2分で反映)
 
-## 残タスク(2026-07-05時点)
+## 残タスク(2026-07-06時点)
 - [x] GitHub リポジトリ作成 + Pages 有効化 + `tags/ecforce_tag.html` のURL確定(2026-07-05完了)
 - [x] 実フォーム照合(2026-07-05完了、lp?u=ug29_test にて。直接入力モードに刷新し `/shop/orders/new` リダイレクトは廃止=あのURLは404)
-- [ ] ecforceタグ管理へのタグ登録 + テストLPへの適用(保積さん操作)
-- [ ] タグ適用後のテストLPで通し確認(チャット→フォーム反映→confirm画面まで。**最終の注文確定は押さない**)
-- [ ] 本番LPでのモバイル実機確認
+- [x] ecforceタグ管理へのタグ登録 + テストLP適用 + 後払いテスト注文成功(2026-07-06完了)
+- [x] 離脱分析ダッシュボード構築(2026-07-06完了。GTM→GA4→シート日次更新。上の「離脱分析ダッシュボード」章を参照)
+- [ ] ダッシュボードの実データでの表示確認(2026-07-07朝以降、シートを開くだけ)
+- [ ] UptimeRobot設定(chatbot.js URLの5分間隔監視+Slack通知。保積さんのアカウント作成から)
+- [ ] 本番LPへのタグ展開 + モバイル実機確認
+- [ ] 本番form-plusの金額設定確認(確認モーダルの静的金額1,980円 vs ecforce実計算2,980円のズレを2026-07-06に発見済み)
 - [ ] (モードB利用時のみ) 遷移先テンプレートへの自動入力スクリプト設置
