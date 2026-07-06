@@ -4,7 +4,7 @@
    env: GA4_PROPERTY_ID / SHEET_ID / SA_KEY_PATH(省略時 analytics/service_account.json)"""
 import os
 import sys
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
 import gspread
@@ -59,7 +59,9 @@ def fetch(start, end):
     return out
 
 def main():
-    end = date.today() - timedelta(days=1)
+    # ⚠️GitHubランナーはUTC。date.today()だとJST朝5時の実行時に「昨日」が2日前になる
+    # (GA4プロパティのタイムゾーンは日本なので日付はJST基準で切る)
+    end = datetime.now(timezone(timedelta(hours=9))).date() - timedelta(days=1)
     start = end - timedelta(days=BACKFILL_DAYS - 1)
     targets = {(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)}
     new_rows = fetch(start.isoformat(), end.isoformat())
