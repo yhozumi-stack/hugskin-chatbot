@@ -1,0 +1,24 @@
+<!-- ============================================================
+  離脱ポップアップ タグ【A: 画像全体クリック版】
+  ------------------------------------------------------------
+  CTAボタンごと画像(GIF)に焼き込んであるクリエイティブ用(ada-cloud式)。
+  画像のどこをタップしてもCTA(チャット起動)、右上の×だけ閉じる。
+
+  ecforceタグ管理: チャットのタグの下(bodyの最後でもOK)に貼る。
+  設定は全部このタグ内で完結=変更はタグ編集のみ・push不要・このLPだけに効く。
+
+  ▼テスト時はこの2行を書き換える:
+    triggers: ['back', 'delay5000'],   ← 5秒で出る
+    oncePer: 'always',                 ← 毎回出る
+  ============================================================ -->
+<script>
+window.HS_POPUP = {
+  triggers: ['back', 'delay60000'],  /* ブラウザバック + 60秒経過 */
+  image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/popup_test_teaflex.gif',  /* ⚠️本番はHugSkin用に差し替え */
+  imageClickable: true,              /* ボタン焼き込み画像なので画像全体クリック */
+  ctaAction: 'chat',                 /* タップでチャット起動('form'=フォームへ / URL=遷移) */
+  closeText: '',                     /* 画像に任せて下の閉じるリンクは非表示(×は常に出る) */
+  oncePer: 'session',                /* タブを閉じるまで1回 */
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/popup.js?v=1" defer></script>

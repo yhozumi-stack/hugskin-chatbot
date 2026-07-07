@@ -313,8 +313,12 @@ LPから離脱しかけた人を引き止めるポップアップ。**chatbot.js
 **番兵は1つだけ=2回目の「戻る」は素直に離脱させる**(無限に引き止めるとGoogleペナルティ・UX悪化のため。この設計は変えない)。
 
 ### レシピP1: LPにポップアップを付ける(タグを貼るだけ・push不要)
-1. `tags/ecforce_tag_popup.html` の中身をコピー
-2. ecforce管理画面 > タグ管理 > 対象LPのタグに追記(チャットのタグがある場合は**その下**)
+1. 3パターンから選んでコピー(全部 `tags/` 内):
+   - `popup_tag_A_画像全体クリック版.html` … ボタン焼き込み1枚GIF用(ada-cloud式)
+   - `popup_tag_B_画像+重ねボタン版.html` … ボタン無し画像+重ねCTA(理想形)
+   - `popup_tag_C_画像なしテキスト版.html` … 画像が無くても出せる白カード
+   (全オプションの解説付き正本は `ecforce_tag_popup.html`)
+2. ecforce管理画面 > タグ管理 > 対象LPのタグに追記(チャットのタグがある場合は**その下**。bodyの最後でもOK)
 3. 文言・価格・タイミングをタグ内の `window.HS_POPUP` で調整
 - チャット併設LPでは `vars` を書かなくても `window.HS_CHAT.vars` の `{{PRICE}}` 等を自動引き継ぎ
 - チャット無しLPでは `vars: { PRICE: '…' }` を書き、`ctaAction` を `'form'` かURLにする

@@ -176,6 +176,26 @@ fieldNotes: { email: '' },                 /* 消す場合 */
 チェックが外れている間は確定ボタンが押せない。チャットで同意済みの場合のみ、
 LP側の同意チェック(input[name=agree])にも自動で反映される。
 
+## 離脱ポップアップ(popup.js・チャットとは別タグ)
+
+チャットのタグの**下に追加で**貼る(完成形は同フォルダの `popup_tag_A/B/C_*.html`)。
+
+| パターン | ファイル | 使い分け |
+|---|---|---|
+| A. 画像全体クリック | `popup_tag_A_画像全体クリック版.html` | CTAボタンごと焼き込んだ1枚GIF用(ada-cloud式) |
+| B. 画像+重ねボタン | `popup_tag_B_画像+重ねボタン版.html` | ボタン無し画像の上にボタンを重ねる(理想形・誤タップなし) |
+| C. 画像なしテキスト | `popup_tag_C_画像なしテキスト版.html` | クリエイティブが無くても今すぐ出せる白カード |
+
+3つの違いは `image` と `imageClickable` だけ:
+```js
+/* A. 画像全体クリック */  image: 'https://…/creative.gif', imageClickable: true,
+/* B. 画像+重ねボタン */  image: 'https://…/creative.png',   /* imageClickableは書かない */
+/* C. 画像なしテキスト */  /* imageを書かない */
+```
+テスト時は `triggers: ['back','delay5000']` + `oncePer: 'always'` に変える(本番= delay60000 / session)。
+⚠️同じLPでチャットの `closeConfirm` を使う場合、`triggers` に `'chatclose'` は入れない(二重引き止め防止)。
+詳細レシピは CLAUDE.md の「LP離脱ポップアップ」章。
+
 ## 質問の順番をタグで並べ替え(v3.18.0〜)
 
 ```js
