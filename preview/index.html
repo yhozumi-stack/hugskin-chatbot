@@ -147,6 +147,12 @@ window.HS_CHAT = {
   /* プレビューでは転記先をモック注文フォームに向ける */
   ecforceOrderUrl: './orders_new_mock.html',
 };
+/* URLで試すシナリオを切替できる(別名シナリオの動作確認用)。
+   例: http://localhost:8940/preview/?scenario=formplus_b */
+(function () {
+  var m = location.search.match(/[?&]scenario=(\w+)/);
+  if (m) window.HS_CHAT.scenario = m[1];
+})();
 </script>
 <script src="../chatbot.js" defer></script>
 <!-- ▲▲ ここまで ▲▲ -->

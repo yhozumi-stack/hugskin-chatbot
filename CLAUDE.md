@@ -169,6 +169,28 @@ theme: { brand: '#C8869A' },            // 色変更(チャット全体の色と
 3. Clarity では `hs_scenario` カスタムタグでA/B別にセッションを絞り込める(自動送信済み)
 4. LP自体のABは ecforce/Squad beyond 側の既存AB機能でLPを分け、それぞれに別タグを貼る
 
+### レシピ13b: 文言"全変え"版シナリオを安全に作る(ABテスト用・Sonnet向け完全手順)
+「入力欄ラベル・選択肢・途中の発話まで全部変えたB版」を、既存LPに一切影響させずに作る手順。
+**この手順の順番どおりにやれば事故らない。飛ばすと事故る**:
+
+1. `chatbot.js` の `SCENARIOS` 内で `formplus:` の配列を丸ごとコピーし、その直下に `formplus_b:` として貼り付ける(**コピー元の formplus は1文字も触らない**)
+2. `formplus_b` 側の文言を書き換える。**変えていいのは文言だけ**:
+   - ✅ 変えてよい: `intro` / `msg` / `label` / `placeholder` / `note` / choicesの `label`
+   - 🚫 絶対に変えない: `key` / `type` / choicesの `value` / `validate` / `norm` / fieldsの構造(増減・分割)
+     (転記は `key` 名と `value` で動いている。変えるとB版LPだけ注文が壊れる)
+3. **一括置換(全置換)は使わない**(コピー元の formplus まで書き換わる定番事故。B側を1箇所ずつ編集する)
+4. **構文チェック(push前に必須)**:
+```bash
+node --check "/Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot/chatbot.js" && echo OK
+```
+   エラーが出たら**絶対にpushしない**(構文エラーのpushは10分以内に全LPのチャットを止める)
+5. previewで**B版を全ステップ**確認: レシピ7のサーバーを起動して
+   `http://localhost:8940/preview/?scenario=formplus_b` → 最後まで入力してモックフォームに緑枠が全部入ること
+6. previewで**既存版が無傷**なことも確認: `http://localhost:8940/preview/?scenario=formplus` を1周
+7. push → **B版LPのタグだけ** `scenario: 'formplus_b'` を指定し `?v=` を+1(A版LPのタグは触らない)
+8. ABの割り付けはecforce/Squad beyondのAB機能でLPを分ける。計測は `hs_scenario` で自動分離、
+   シナリオ別ダッシュボードはレシピC(タブをコピーしてE4にシナリオ名を固定)
+
 ### レシピ14: カード入力ステップ(v3.3.0〜)
 - 支払いで「クレジット」を含む選択肢を選んだ時だけ自動表示(後払いなら自動スキップ)
 - 番号/有効期限(LPフォームの年selectから自動生成)/名義(自動大文字化)
