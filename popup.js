@@ -215,7 +215,8 @@ function buildCss() {
   + '.imgcard .img{border-radius:16px;pointer-events:none;max-height:76vh;width:auto;max-width:100%;'
   +   'margin:0 auto;box-shadow:0 12px 40px rgba(0,0,0,.25)}'
   + '.imgcard.clickable .img{pointer-events:auto;cursor:pointer}'
-  + '.ctaover{position:absolute;left:50%;transform:translateX(-50%);bottom:' + CFG.ctaBottom + ';'
+  /* .cta.ctaover の2クラス指定は必須(後方で定義される .cta{width:100%} に負けないため) */
+  + '.cta.ctaover{position:absolute;left:50%;transform:translateX(-50%);bottom:' + CFG.ctaBottom + ';'
   +   'width:' + CFG.ctaWidth + ';margin:0;animation:hspPulse 1.6s ease-in-out infinite}'
   + '@keyframes hspPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.04)}}'
   + '.laterbar{text-align:center;padding:2px 0 0}'

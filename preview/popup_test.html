@@ -109,6 +109,20 @@ if (/[?&]closeconfirm/.test(location.search)) {
     : { image: '../img/popup_test_teaflex.gif' };
   window.HS_POPUP.triggers = [];
 }
+/* ボタン位置・幅の目視調整モード(Bパターン用)。URLの数字を変えて更新するだけで確認できる。
+   例: ?imgurl=https://…/creative.png&ctabottom=9&ctawidth=70&ctatext=今すぐ試す
+   imgurl はエンコード不要(&を含むURLだけ encodeURIComponent する) */
+(function () {
+  var q = new URLSearchParams(location.search);
+  if (!q.get('imgurl') && !q.get('ctabottom') && !q.get('ctawidth')) return;
+  if (q.get('imgurl'))    window.HS_POPUP.image = q.get('imgurl');
+  if (q.get('ctabottom')) window.HS_POPUP.ctaBottom = q.get('ctabottom').replace(/%?$/, '%');
+  if (q.get('ctawidth'))  window.HS_POPUP.ctaWidth  = q.get('ctawidth').replace(/%?$/, '%');
+  if (q.get('ctatext'))   window.HS_POPUP.ctaText   = q.get('ctatext');
+  window.HS_POPUP.triggers = ['delay300'];   /* 即表示 */
+  window.HS_POPUP.oncePer = 'always';        /* リロードのたびに出る */
+  window.HS_CHAT.autoOpen = 'manual';        /* チャットは邪魔なので手動起動に */
+})();
 </script>
 <script src="../chatbot.js" defer></script>
 <script src="../popup.js" defer></script>
