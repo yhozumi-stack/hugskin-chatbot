@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】離脱ポップアップ動作確認用 偽LP</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; margin: 0; color: #333; }
+  .hero { background: linear-gradient(135deg, #f9f1f4, #f0d9e2); padding: 60px 20px; text-align: center; }
+  .hero h1 { color: #a86880; font-size: 28px; }
+  section { max-width: 640px; margin: 0 auto; padding: 40px 20px; line-height: 1.9; }
+  .spacer { height: 60vh; background: repeating-linear-gradient(#fff, #fff 59px, #f5f5f5 60px); display:flex; align-items:center; justify-content:center; color:#bbb; }
+  .checklist { background:#fff8fa; border:1px solid #f0d9e2; border-radius:8px; padding:16px 20px; font-size:13px; }
+  #evlog { position:fixed; left:8px; bottom:8px; z-index:2147483002; background:rgba(0,0,0,.75); color:#9f9;
+           font:11px/1.5 monospace; padding:6px 10px; border-radius:6px; max-width:46vw; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>HugSkin C10 ALL IN SERUM</h1>
+  <p>これは離脱ポップアップ(popup.js)動作確認用の偽LPです</p>
+</div>
+
+<section>
+  <div class="checklist">
+    <b>テスト手順(このページの設定: delay5000 + back / oncePer:'load')</b><br>
+    ① 何も触らず5秒待つ → ポップアップが出る(トリガー=delay)。×で閉じる<br>
+    ② リロード → ページを一度タップかスクロールしてから「戻る」 → ポップアップが出る(トリガー=back)<br>
+    ③ ②の後もう一度「戻る」 → 引き止めずに普通にページを離れる(無限トラップしない)<br>
+    ④ ポップアップのCTAボタン → チャットが起動する<br>
+    ⑤ リロード → 先にチャットを開いたまま5秒待つ → ポップアップは出ない(チャット優先)。チャットを×で閉じると、その後の再判定(10秒おき)で出る<br>
+    ⑥ リロード → 下のフォーム欄にカーソルを入れたまま5秒待つ → 出ない。欄の外をタップすると再判定で出る<br>
+    左下の黒い枠に hs_chat_popup_* イベントが流れることも確認(計測の確認)<br><br>
+    <b>URLパラメータで切替できるテストモード</b><br>
+    <code>?img</code> … 画像モード(画像+重ねCTAボタン。画像は押せずボタンだけ反応)<br>
+    <code>?img&amp;clickable</code> … ada-cloud式(重ねボタンなし・画像全体がCTA)<br>
+    <code>?backonly</code> … ブラウザバックのみ(delay無効)<br>
+    <code>?chatclose</code> … チャットを開いて×で閉じた瞬間に出るテスト
+  </div>
+</section>
+
+<div class="spacer">（スクロール領域）</div>
+
+<!-- 'form'スクロール先・formFocused判定テスト用の最小フォームモック -->
+<section id="lp-form">
+  <h2>ご注文フォーム（モック）</h2>
+  <form onsubmit="return false" style="display:grid;gap:10px;max-width:480px">
+    <label>お名前<input name="order[billing_address_attributes][name01]"></label>
+    <label>メールアドレス<input type="email" name="order[email]"></label>
+  </form>
+</section>
+
+<section><p>ページ末尾。</p></section>
+
+<!-- dataLayerに流れるイベントを画面に出す(テスト可視化用) -->
+<div id="evlog">dataLayer: (まだイベントなし)</div>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  (function () {
+    var orig = window.dataLayer.push.bind(window.dataLayer);
+    var lines = [];
+    window.dataLayer.push = function (o) {
+      if (o && o.event) {
+        lines.push(o.event + (o.hs_popup_trigger ? ' [' + o.hs_popup_trigger + ']' : ''));
+        document.getElementById('evlog').textContent = 'dataLayer: ' + lines.slice(-6).join(' → ');
+      }
+      return orig(o);
+    };
+  })();
+</script>
+
+<!-- ▼▼ ecforceタグ管理に貼るタグと同じ構造(チャット+ポップアップ併設パターン) ▼▼ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'standard',
+  vars: { PRICE: '初回1,980円(税込)' },
+  mode: 'float',
+  autoOpen: 'manual',          /* ポップアップのテストなのでチャットはランチャーから手動起動 */
+  ecforceOrderUrl: './orders_new_mock.html',
+};
+window.HS_POPUP = {
+  triggers: ['back', 'delay5000'],   /* テスト用に5秒。本番タグは delay60000 */
+  badge: '初回限定',
+  title: 'ちょっとお待ちください！',
+  lines: [
+    'ただいま初回限定 {{PRICE}} でご案内しています。',
+    'このページを閉じると、次回は通常価格でのご案内になる場合があります。',
+    'この行は{{NOVAR}}未設定変数のテストなので表示されないはず。',
+  ],
+  ctaText: '{{PRICE}}で試してみる',
+  ctaAction: 'chat',
+  closeText: '今回は見送る',
+  oncePer: 'load',                   /* テスト用: リロードすれば毎回出る。本番は 'session' */
+  /* vars未指定 → HS_CHAT.vars から PRICE を自動引き継ぐテスト */
+};
+/* URLパラメータでテストモード切替(上の手順ボックス参照) */
+if (/[?&]backonly/.test(location.search)) window.HS_POPUP.triggers = ['back'];
+if (/[?&]chatclose/.test(location.search)) window.HS_POPUP.triggers = ['chatclose'];
+if (/[?&]img/.test(location.search)) window.HS_POPUP.image = '../img/chat_fv1_6980.png';
+if (/[?&]clickable/.test(location.search)) window.HS_POPUP.imageClickable = true;
+</script>
+<script src="../chatbot.js" defer></script>
+<script src="../popup.js" defer></script>
+<!-- ▲▲ ここまで ▲▲ -->
+
+</body>
+</html>

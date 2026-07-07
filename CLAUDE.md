@@ -25,7 +25,9 @@ ecforce LP に埋め込む新規獲得用チャットボット。1ファイル(`
 | ファイル | 役割 | 編集頻度 |
 |---|---|---|
 | `chatbot.js` | 本体。①DEFAULTS ②SCENARIOS ③ENGINE の3部構成 | ①②は編集OK / **③ENGINEは編集注意** |
+| `popup.js` | **LP離脱ポップアップ**(チャットとは独立・別ファイル)。①DEFAULTS ②ENGINE | ①は編集OK / **②ENGINEは編集注意** |
 | `tags/ecforce_tag.html` | ecforceタグ管理に貼るタグの正本 | LP追加時に参照 |
+| `tags/ecforce_tag_popup.html` | 離脱ポップアップ用タグの正本 | ポップアップ設置時に参照 |
 | `ecforce/orders_new_autofill.html` | orders/new テンプレートに設置する自動入力スクリプトの正本 | ほぼ不変 |
 | `preview/index.html` | 偽LP(ローカル動作確認用) | 確認時に使う |
 | `preview/orders_new_mock.html` | ecforce注文フォームのモック(転記テスト用) | ほぼ不変 |
@@ -212,6 +214,80 @@ hideForm: true,
 - クレカ+自動送信(標準運用)のお客様は、フォームを一度も見ずに注文完了する
 - 動作確認は `preview/hideform_test.html`
 
+## LP離脱ポップアップ(popup.js・2026-07-07新設)
+
+LPから離脱しかけた人を引き止めるポップアップ。**chatbot.jsとは完全に別ファイル**なので、
+ポップアップをいくら変更してもチャット・CVは壊れない(逆も同じ)。チャットが無いLP
+(Teaflex等の他ブランドLP含む)でも単体で動く。
+
+- **出すタイミング**: `'back'`(ブラウザバック/スマホの戻る) / `'delayNNNNN'`(N ms経過) / `'chatclose'`(チャットを×で閉じた瞬間) / `'visibility'`(別タブ・別アプリから戻ってきた瞬間)。複数指定可・どれかで1回だけ表示
+- **見た目は2モード**(タグの `image` の有無で自動切替):
+  - **画像モード(推奨)**: `image` に画像URL(GIF可)を設定 → 「画像+その上に重ねたCTAボタン」。**画像自体は押せない**(ボタンと×だけ反応)。コピーは画像に焼き込む前提。ボタン位置・幅は `ctaBottom`/`ctaWidth` で微調整。ada-cloud式(ボタンごと焼き込んだ1枚GIFで画像全体をクリックさせる)にしたい時だけ `imageClickable: true`
+  - **テキストモード**: `image` が空 → バッジ+タイトル+本文+CTAボタン(画像素材が無いLPでもすぐ出せる)
+- **CTAの飛び先**: `'chat'`(チャット起動=`window.HSChat.open()`。チャット無しLPでは自動でフォームスクロールに切替) / `'form'`(注文フォームへスクロール) / `'close'`(閉じるだけ=「LPに戻る」ボタン) / URL文字列(遷移)
+- **出さない条件(自動判定・設定不要)**: チャットを開いている間 / チャットで注文送信済み / フォーム入力中(フォーカス中) / 表示済み(既定はタブを閉じるまで1回)
+- **チャット側の状態は dataLayer のイベント履歴から読む**(chatbot.jsのコードには一切依存しない疎結合)
+
+### 仕組み(backトリガー)
+最初のユーザー操作(タップ/スクロール/キー)で履歴に番兵を1つ積む → 「戻る」で番兵が消えた瞬間に表示。
+**番兵は1つだけ=2回目の「戻る」は素直に離脱させる**(無限に引き止めるとGoogleペナルティ・UX悪化のため。この設計は変えない)。
+
+### レシピP1: LPにポップアップを付ける(タグを貼るだけ・push不要)
+1. `tags/ecforce_tag_popup.html` の中身をコピー
+2. ecforce管理画面 > タグ管理 > 対象LPのタグに追記(チャットのタグがある場合は**その下**)
+3. 文言・価格・タイミングをタグ内の `window.HS_POPUP` で調整
+- チャット併設LPでは `vars` を書かなくても `window.HS_CHAT.vars` の `{{PRICE}}` 等を自動引き継ぎ
+- チャット無しLPでは `vars: { PRICE: '…' }` を書き、`ctaAction` を `'form'` かURLにする
+
+### レシピP2: 文言・画像・色を変える(タグのみ・push不要)
+タグの `window.HS_POPUP` を編集するだけ。全項目と意味は `popup.js` の①DEFAULTSのコメント参照。
+- **画像モード**: `image:` 画像URL(GIF可) / `ctaBottom: '7%'` ボタンの画像下端からの位置 / `ctaWidth: '78%'` ボタン幅 / `imageClickable: true` で画像全体クリック化
+- **テキストモード**: `badge:` タイトル上の小ラベル / `title:` / `lines:` 本文(1要素=1行)
+- 共通: `ctaText:` / `ctaAction:` / `closeText:`
+- `{{PRICE}}` 等の変数を含む行は、変数未設定なら**行ごと自動非表示**(chatbotと同じルール)
+- 色は `theme: { brand: '#C8869A' }`
+- 画像素材はこのリポジトリの `img/` に入れてpushすれば `https://yhozumi-stack.github.io/hugskin-chatbot/img/ファイル名` で配信される
+
+### レシピP3: 出すタイミングを変える(タグのみ・push不要)
+```js
+triggers: ['back', 'delay60000'],   // ブラウザバック+60秒(既定)
+triggers: ['back'],                 // ブラウザバックのみ
+triggers: ['delay30000'],           // 30秒経過のみ
+triggers: ['back', 'chatclose'],    // バック+チャットを×で閉じた瞬間
+triggers: ['back', 'visibility'],   // バック+別タブから戻ってきた瞬間
+```
+時間経過は、発火時にチャット操作中・フォーム入力中なら10秒おきに再判定して手が空いたら出す。
+
+### レシピP4: 表示頻度
+`oncePer: 'session'`(既定=タブを閉じるまで1回。LPの `u=` パラメータ単位で記録) / `'load'`(ページ表示ごと) / `'always'`(毎回=テスト用)
+
+### レシピP5: 動作確認(popup.jsを変更したら必ずやる)
+```bash
+cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
+python3 -m http.server 8940
+# → http://localhost:8940/preview/popup_test.html を開く(手順①〜⑥がページ上部に書いてある)
+# URLパラメータでテストモード切替: ?img(画像モード) / ?img&clickable(ada式・画像全体クリック)
+#                                   / ?backonly(バックのみ) / ?chatclose(チャット閉じで出す)
+```
+チェックリスト: ①5秒で出る ②タップ/スクロール後の「戻る」で出る ③その後もう一度「戻る」で普通に離脱する ④CTAでチャットが起動する ⑤チャットを開いている間は出ない ⑥フォーム入力中は出ない ⑦`?img` で画像+重ねボタンになり、画像を押しても何も起きずボタンだけ反応する
+
+### 計測(設定変更ゼロで既存パイプラインに乗る)
+イベント名を `hs_chat_popup_show` / `hs_chat_popup_cta` / `hs_chat_popup_close` にしてあるため、
+既存のGTMトリガー(`hs_chat_.*`)・GA4・毎朝5時のシート集計(`hs_chat_` 前方一致)に**そのまま乗る**。
+- シートのdataタブには event=`popup_show` / `popup_cta` / `popup_close` の行として自動で入る
+- どのトリガーで出たかは GA4イベントパラメータ `hs_popup_trigger`(back/delay/chatclose/visibility)で分かる
+- ダッシュボードで見たい場合はB列に `popup_show` 等の行を足すだけ(既存行の数式をコピー)
+- **⚠️イベント名を `hs_popup_*` に変えてはいけない**(前方一致から外れて計測が全部消える)
+
+### デプロイ(chatbot.jsと同じ方式)
+`popup.js` を変更したら push → 反映したいLPのタグの `popup.js?v=` を+1(タグだけの変更ならpush不要・即時)。
+配信URL: `https://yhozumi-stack.github.io/hugskin-chatbot/popup.js`(UptimeRobotの監視対象に追加するのが望ましい)
+
+### ⚠️ 既知の限界(仕様として許容)
+- **無操作で直帰する人にはbackトリガーは出ない**: Chromeは「ユーザー操作なしに積まれた履歴」を戻るボタンでスキップする仕様(back intervention)のため、番兵は初回操作後に積んでいる。LPを1秒も見ずに戻る人は引き止められない
+- **iOSのスワイプバック**: BFCacheでページごと戻るため、ポップアップが間に合わない(出ない)ことがある。時間経過トリガーとの併用で補完する
+- 履歴に番兵を積む都合上、ページ内アンカー(#lp-form)遷移と混在しても誤発火しないよう state で判定済み(`{hs_popup:1}` が残っている間は発火しない)
+
 ## カゴ落ちタグ(nogasazu)との連携(v3.22.0〜)
 - **iframeタグは不要**(form-plus時代の遺物。あれはチャットがiframe内にあったから必要だった。今のチャットはページ内直描画なので入れる場所自体が無い)
 - **LPタグ・CVタグは従来どおり設置でOK**(nogasazu側の設定変更も不要)
@@ -304,5 +380,6 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 - [x] 本番LPへのタグ展開 + 実機確認(2026-07-06完了、**本番CV確認済み**)
 - [x] UptimeRobot設定(2026-07-06完了。chatbot.js/hugskin.shopを5分間隔監視。無料プランはSlack直結不可のためGmail転送フィルタ経由で#hugskin_chatbot_alertへ通知。下記「外形監視」章を参照)
 - [ ] ダッシュボードの実データでの表示確認(2026-07-07朝以降、シートを開くだけ)
+- [ ] **離脱ポップアップ(popup.js)の本番投入**(2026-07-07ローカル検証済み・未デプロイ): ①push ②タグ登録(レシピP1) ③iOS実機でスワイプバック/戻る挙動を確認 ④UptimeRobotにpopup.js配信URLのモニター追加 ⑤ダッシュボードにpopup_show/popup_cta行を追加
 - [ ] 本番form-plusの金額設定確認(確認モーダルの静的金額1,980円 vs ecforce実計算2,980円のズレを2026-07-06に発見済み)
 - [ ] (モードB利用時のみ) 遷移先テンプレートへの自動入力スクリプト設置

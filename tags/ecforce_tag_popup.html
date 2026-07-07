@@ -1,0 +1,49 @@
+<!-- ============================================================
+  LP離脱ポップアップ タグ(正本)
+  ecforce管理画面 > タグ管理 に、この2つの<script>を貼る。
+  チャットボットのタグがあるLPでは「チャットのタグの下」に追加する
+  (チャット無しのLP・Teaflex等の他ブランドLPでも単体で動く)。
+
+  設定は window.HS_POPUP で全部タグ内完結(LPのHTMLは触らない)。
+  文言・画像・タイミングの変更はこのタグの編集だけ = push不要・即時反映。
+  popup.js 本体を変更した時だけ ?v= を +1 する(チャットと同じキャッシュ方式)。
+  ============================================================ -->
+<script>
+window.HS_POPUP = {
+  /* 出すタイミング(複数OK): 'back'=ブラウザバック / 'delay60000'=60秒後(ms)
+     / 'chatclose'=チャットを×で閉じた瞬間 / 'visibility'=別タブから戻ってきた瞬間 */
+  triggers: ['back', 'delay60000'],
+
+  /* --- 見た目: 画像モード(推奨) ---
+     imageを設定すると「画像(GIF可)+重ねたCTAボタン」になる。
+     画像自体は押せない(ボタンと×だけ反応)。コピーは画像に焼き込む前提で、
+     badge/title/lines は使われない */
+  image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/popup.png',
+  /* ctaBottom: '7%',  ボタンの画像下端からの位置 */
+  /* ctaWidth: '78%',  ボタンの幅 */
+  /* imageClickable: true,  ボタンごと焼き込んだ1枚GIFで画像全体をクリックさせたい時だけ */
+
+  /* --- 見た目: テキストモード(imageを空にした時だけ使われる) --- */
+  badge: '初回限定',                            /* タイトル上の小さいラベル。空なら非表示 */
+  title: 'ちょっとお待ちください！',
+  lines: [                                     /* 本文(1行ずつ)。{{PRICE}}が未設定の行は自動で消える */
+    'ただいま初回限定 {{PRICE}} でご案内しています。',
+    'このページを閉じると、次回は通常価格でのご案内になる場合があります。',
+  ],
+
+  /* --- CTAボタン(両モード共通) --- */
+  ctaText: '{{PRICE}}で試してみる',
+  ctaAction: 'chat',                           /* 'chat'=チャット起動 / 'form'=フォームへスクロール / 'close'=閉じてLPに戻る / 'https://…'=URL遷移 */
+  closeText: '今回は見送る',
+
+  /* --- 表示頻度 --- */
+  oncePer: 'session',                          /* タブを閉じるまで1回。テスト時だけ 'always' にする */
+
+  /* --- 変数・色 ---
+     vars を書かなければ、同じLPの window.HS_CHAT.vars(チャット設定)から
+     PRICE等を自動で引き継ぐ。チャット無しLPではここに書く */
+  /* vars: { PRICE: '初回1,980円(税込)' }, */
+  /* theme: { brand: '#C8869A' }, */
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/popup.js?v=1" defer></script>
