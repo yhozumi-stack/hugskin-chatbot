@@ -22,6 +22,14 @@ jobs:
           size=$(echo -n "$body" | wc -c)
           [ "$size" -gt 30000 ] || { echo "::error::ファイルサイズが異常に小さい(${size}bytes)"; exit 1; }
           echo "OK: ${size} bytes"
+      - name: popup.js の配信と中身を確認
+        run: |
+          url="https://yhozumi-stack.github.io/hugskin-chatbot/popup.js?hc=${RANDOM}"
+          body=$(curl -sf --max-time 20 "$url") || { echo "::error::popup.js が取得できません(配信停止の可能性)"; exit 1; }
+          echo "$body" | head -3 | grep -q "LP離脱ポップアップ" || { echo "::error::popup.js の中身が壊れています"; exit 1; }
+          size=$(echo -n "$body" | wc -c)
+          [ "$size" -gt 5000 ] || { echo "::error::ファイルサイズが異常に小さい(${size}bytes)"; exit 1; }
+          echo "OK: ${size} bytes"
       - name: 画像アセットの配信を確認
         run: |
           for img in operator.png payment_promo.png; do

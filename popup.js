@@ -1,5 +1,7 @@
 /*! ============================================================
-    LP離脱ポップアップ popup.js v1.0.0
+    LP離脱ポップアップ popup.js v1.1.0
+    (v1.1.0: 画像URLが404等で読めない時はテキストモードに自動フォールバック
+     +hs_chat_errorで計測に通知)
     ------------------------------------------------------------
     ecforce LP にタグを貼るだけで動く、1ファイル完結・依存ゼロの
     離脱防止ポップアップ。chatbot.js とは独立して動く(無くても動く)。
@@ -399,9 +401,31 @@ function setupVisibility() {
   });
 }
 
+/* ---------- 画像の先読みとフォールバック ----------
+   起動時に画像を先読みし、404等で読めない場合はテキストモードに自動で切り替える
+   (タグの画像URL間違い・未配置でもポップアップ自体は壊れない)。
+   エラーは hs_chat_error として計測に流す(気づけるように) */
+function preloadImage() {
+  if (!CFG.image) return;
+  var im = new Image();
+  im.onerror = function () {
+    try {
+      if (window.dataLayer) window.dataLayer.push({
+        event: 'hs_chat_error',
+        hs_error: ('popup image unreachable: ' + CFG.image).slice(0, 200),
+      });
+      if (window.clarity) window.clarity('event', 'hs_chat_error');
+    } catch (e) {}
+    CFG.image = '';            // テキストモードへフォールバック
+    CFG.imageClickable = false;
+  };
+  im.src = CFG.image;
+}
+
 /* ---------- 起動 ---------- */
 function boot() {
   if (!CFG.enabled) return;
+  preloadImage();
   var trigs = CFG.triggers || [];
   for (var i = 0; i < trigs.length; i++) {
     var t = String(trigs[i]);

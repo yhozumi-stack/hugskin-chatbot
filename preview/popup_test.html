@@ -119,7 +119,7 @@ if (/[?&]closeconfirm/.test(location.search)) {
   if (q.get('ctabottom')) window.HS_POPUP.ctaBottom = q.get('ctabottom').replace(/%?$/, '%');
   if (q.get('ctawidth'))  window.HS_POPUP.ctaWidth  = q.get('ctawidth').replace(/%?$/, '%');
   if (q.get('ctatext'))   window.HS_POPUP.ctaText   = q.get('ctatext');
-  window.HS_POPUP.triggers = ['delay300'];   /* 即表示 */
+  window.HS_POPUP.triggers = ['delay300', 'back'];   /* 即表示(タブが背面の時はスクロール→戻るでも出せる) */
   window.HS_POPUP.oncePer = 'always';        /* リロードのたびに出る */
   window.HS_CHAT.autoOpen = 'manual';        /* チャットは邪魔なので手動起動に */
 })();
