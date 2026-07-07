@@ -1,5 +1,7 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.22.0
+    HugSkin 獲得チャットボット v3.23.0
+    (v3.23.0: ×押下時の閉じ確認ダイアログ closeConfirm を追加。
+     既定OFF=タグで設定したLPだけ有効。詳細はDEFAULTSのコメント)
     ------------------------------------------------------------
     1ファイル完結・依存ゼロ。LP側は ecforce タグ管理で
     tags/ecforce_tag.html の内容を貼るだけで動く。
@@ -46,6 +48,21 @@ var DEFAULTS = {
   /* カウントダウンバー(緊急性演出)。true か {text:'…'} で有効。
      毎日23:59:59までの残り時間を表示(日付が変わるとリセット) */
   countdown: null,
+  /* ×を押した時の「閉じ確認」ダイアログ(チャット内離脱防止)。
+     ⚠️既定OFF(null)=タグで closeConfirm を設定したLPだけ有効(全LPには影響しない)。
+     白部分(タイトル+ボタン2つ)は固定レイアウト、imageのクリエイティブ部分だけ可変。
+     imageが空ならタイトル+ボタンだけ出す。
+     タグ例(全部任意・書いた項目だけ上書き):
+       closeConfirm: {
+         title: '初回限定チャットを閉じますか？',
+         stayText: 'チャットに戻る',      // 右のボタン(ブランド色)=チャット継続
+         leaveText: '閉じる',             // 左のボタン(グレー)=本当に閉じる
+         image: 'https://…/anshin.png',   // 白部分の下に出すクリエイティブ(空なら無し)
+       }
+     最小はタグに closeConfirm: {} と書くだけでON(文言は上の既定)。
+     ※注文送信後は出さない(自動判定)。popup.jsの'chatclose'トリガーとの併用は
+       二重引き止めになるのでどちらか片方だけ使うこと */
+  closeConfirm: null,
   /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
      例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' }
      同意チェックボックス関連:
@@ -428,6 +445,7 @@ if (CFG.stepOrder && CFG.stepOrder.length) {
 }
 
 var answers = {};
+var transferStarted = false;   // 注文転記に入ったら閉じ確認(closeConfirm)は出さない
 var prefill = {};          // 郵便番号API→住所カードへの受け渡し
 var current = 0;
 var doneCount = 0;
@@ -565,6 +583,15 @@ var CSS = ''
 + '.modal-x{background:none;border:none;font-size:20px;color:#9a8a90;cursor:pointer;line-height:1;padding:2px 6px}'
 + '.modal-card .sum{margin:0;border:none;border-radius:0;box-shadow:none;overflow-y:auto;flex:1;animation:none}'
 + '.inline-box{position:relative}'
+/* ×押下時の閉じ確認ダイアログ(closeConfirm。白部分固定+クリエイティブ可変) */
++ '.cc-card{background:#fff;border-radius:14px;width:100%;margin:auto;max-height:100%;overflow-y:auto;'
++   'box-shadow:0 8px 32px rgba(0,0,0,.3);animation:hsIn .18s ease both}'
++ '.cc-title{font-size:15px;font-weight:700;text-align:center;padding:20px 14px 8px;color:#3a2a30;line-height:1.5}'
++ '.cc-btns{display:flex;gap:10px;padding:12px 14px 18px}'
++ '.cc-btns button{flex:1;border-radius:8px;padding:12px 6px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}'
++ '.cc-leave{background:#f4f4f4;border:1px solid #ddd;color:#666}'
++ '.cc-stay{background:' + CFG.theme.brand + ';border:none;color:#fff}'
++ '.cc-img{display:block;width:100%;height:auto}'
 /* 性別ボタン(生年月日カード内・formplusシナリオ) */
 + '.sexrow{display:flex;gap:8px}'
 + '.sexrow .ch{flex:1;text-align:center}'
@@ -617,7 +644,7 @@ function buildChat(container, withClose) {
     setInterval(tick, 1000);
   }
   var close = container.querySelector('.hd-close');
-  if (close) close.addEventListener('click', closePanel);
+  if (close) close.addEventListener('click', requestClose);
   container.addEventListener('pointerdown', function () { interacted = true; }, true);
   /* 回答バブルのタップ → その質問だけ修正 */
   msgsEl.addEventListener('click', function (e) {
@@ -644,6 +671,41 @@ function closePanel() {
   if (launcherEl) launcherEl.style.display = 'flex';
   showLpForm();   // hideForm利用時: チャットを閉じたらフォームを出す(注文導線を潰さない)
   track('close');
+}
+
+/* ×押下時の入口。closeConfirm設定LPでは閉じる前に確認ダイアログを挟む。
+   注文送信後・未設定LP・プログラム経由(HSChat.close)は従来どおり即閉じる */
+function requestClose() {
+  var cc = CFG.closeConfirm;
+  if (!cc || transferStarted) return closePanel();
+  if (panelEl && panelEl.querySelector('.modal-ov.cc')) return;   // 二重表示ガード
+  showCloseConfirm(cc);
+}
+
+function showCloseConfirm(cc) {
+  var ov = document.createElement('div');
+  ov.className = 'modal-ov cc';
+  var img = cc.image ? '<img class="cc-img" src="' + esc(cc.image) + '" alt="">' : '';
+  ov.innerHTML = '<div class="cc-card">'
+    + '<div class="cc-title">' + esc(tpl(cc.title || '初回限定チャットを閉じますか？')) + '</div>'
+    + '<div class="cc-btns">'
+    +   '<button class="cc-leave" type="button">' + esc(cc.leaveText || '閉じる') + '</button>'
+    +   '<button class="cc-stay" type="button">' + esc(cc.stayText || 'チャットに戻る') + '</button>'
+    + '</div>'
+    + img
+    + '</div>';
+  panelEl.appendChild(ov);
+  track('close_confirm_show');
+  function stay() { ov.remove(); track('close_confirm_stay'); }
+  ov.querySelector('.cc-stay').addEventListener('click', stay);
+  ov.addEventListener('click', function (e) { if (e.target === ov) stay(); });  // 背景タップ=戻る
+  var imgEl = ov.querySelector('.cc-img');
+  if (imgEl) imgEl.addEventListener('click', stay);   // クリエイティブのタップも=戻る(焼き込みボタン対策)
+  ov.querySelector('.cc-leave').addEventListener('click', function () {
+    ov.remove();
+    track('close_confirm_leave');
+    closePanel();
+  });
 }
 
 function mount() {
@@ -1849,6 +1911,7 @@ function fillLocalForm(form, silent) {
 
 /* 転記も例外時に無言で止まらないようにする */
 function transfer() {
+  transferStarted = true;
   try {
     transferInner();
   } catch (err) {

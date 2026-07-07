@@ -36,7 +36,8 @@
     <code>?img</code> … 画像モード(画像+重ねCTAボタン。画像は押せずボタンだけ反応)<br>
     <code>?img&amp;clickable</code> … ada-cloud式(重ねボタンなし・画像全体がCTA)<br>
     <code>?backonly</code> … ブラウザバックのみ(delay無効)<br>
-    <code>?chatclose</code> … チャットを開いて×で閉じた瞬間に出るテスト
+    <code>?chatclose</code> … チャットを開いて×で閉じた瞬間に出るテスト<br>
+    <code>?closeconfirm</code> … チャットの×で「閉じますか？」確認ダイアログ(白部分+クリエイティブ)。<code>?closeconfirm&amp;noimg</code> で画像なし版
   </div>
 </section>
 
@@ -99,6 +100,15 @@ if (/[?&]backonly/.test(location.search)) window.HS_POPUP.triggers = ['back'];
 if (/[?&]chatclose/.test(location.search)) window.HS_POPUP.triggers = ['chatclose'];
 if (/[?&]img/.test(location.search)) window.HS_POPUP.image = '../img/chat_fv1_6980.png';
 if (/[?&]clickable/.test(location.search)) window.HS_POPUP.imageClickable = true;
+/* ?closeconfirm … チャットの×で閉じ確認ダイアログ(chatbot.jsのcloseConfirm)のテスト。
+   ポップアップは邪魔なので無効化。?closeconfirm&noimg で画像なし(白部分だけ)の確認 */
+if (/[?&]closeconfirm/.test(location.search)) {
+  window.HS_CHAT.autoOpen = 'immediate';
+  window.HS_CHAT.closeConfirm = /[?&]noimg/.test(location.search)
+    ? {}
+    : { image: '../img/popup_test_teaflex.gif' };
+  window.HS_POPUP.triggers = [];
+}
 </script>
 <script src="../chatbot.js" defer></script>
 <script src="../popup.js" defer></script>
