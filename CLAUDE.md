@@ -398,6 +398,15 @@ python3 -m http.server 8940
 - シートの「ダッシュボード」タブ: B3/B4=期間、E3=LP(u=)、E4=シナリオ をセルで切り替えるだけ
 - 「data」タブ: 生データ(date/lp/scenario/event/count/users)。**手で編集しない**(毎朝、直近3日分が洗い替えされる)
 
+### 離脱防止ブロック(ダッシュボード行21〜31・2026-07-08新設)
+- **①LPポップアップ(行21-25)**: LP流入(lp_view)→ポップ表示(表示率)→クリック(CTR)→閉じ
+  - `lp_view` = GA4の `/lp` ページビュー(pull_ga4.pyが自動取得、scenario列は `(lp)` 固定)
+  - **このブロックはE4(シナリオ)を無視**して期間+LP(E3)だけで絞る(lp_viewがシナリオを持たないため)
+  - ※同一LPでもURLパラメータ違いで複数行になるためusersは若干の重複あり(傾向把握用の近似)
+- **②チャット閉じ確認(行27-31)**: 起動→×押下(=close_confirm_show)→引き止め成功(stay÷show)→離脱
+- 作成スクリプト: `analytics/add_popup_dashboard.py`(再実行すると行21-31を上書き再生成)
+- トリガー別(back/delay等)に割りたい時はGA4カスタムディメンション `hs_popup_trigger` の登録が必要(未登録)
+
 ### 各種ID(問い合わせ時にそのまま使う)
 - スプレッドシートID: `1alEw24pSXbbjtwM5RBl8cCXu77ZLHTHJsTsEO70bEwM`
 - GA4: プロパティID `534388892` / アカウント `392481201` / 測定ID `G-E8KW5RMQV3`

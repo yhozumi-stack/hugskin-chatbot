@@ -58,13 +58,37 @@ def fetch(start, end):
         out.append([ymd, lp, scenario, event, int(r.metric_values[0].value), int(r.metric_values[1].value)])
     return out
 
+def fetch_lp_views(start, end):
+    """LP(/lp)へのページビューを日次×LP(u=)で取得し、event='lp_view' の行にする。
+       離脱ポップアップの表示率(popup_show ÷ lp_view)の分母に使う。
+       scenario列は '(lp)' 固定(チャットのイベントではないため)"""
+    client = BetaAnalyticsDataClient(credentials=creds)
+    req = RunReportRequest(
+        property=f"properties/{PROPERTY_ID}",
+        date_ranges=[DateRange(start_date=start, end_date=end)],
+        dimensions=[Dimension(name="date"), Dimension(name="pagePathPlusQueryString")],
+        metrics=[Metric(name="screenPageViews"), Metric(name="totalUsers")],
+        dimension_filter=FilterExpression(filter=Filter(
+            field_name="pagePathPlusQueryString",
+            string_filter=Filter.StringFilter(
+                match_type=Filter.StringFilter.MatchType.BEGINS_WITH, value="/lp"))),
+        limit=100000,
+    )
+    out = []
+    for r in client.run_report(req).rows:
+        d = r.dimension_values
+        ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
+        lp = normalize_lp(d[1].value or "")
+        out.append([ymd, lp, "(lp)", "lp_view", int(r.metric_values[0].value), int(r.metric_values[1].value)])
+    return out
+
 def main():
     # ⚠️GitHubランナーはUTC。date.today()だとJST朝5時の実行時に「昨日」が2日前になる
     # (GA4プロパティのタイムゾーンは日本なので日付はJST基準で切る)
     end = datetime.now(timezone(timedelta(hours=9))).date() - timedelta(days=1)
     start = end - timedelta(days=BACKFILL_DAYS - 1)
     targets = {(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)}
-    new_rows = fetch(start.isoformat(), end.isoformat())
+    new_rows = fetch(start.isoformat(), end.isoformat()) + fetch_lp_views(start.isoformat(), end.isoformat())
     print(f"GA4: {len(new_rows)} rows / {sorted(targets)}")
 
     gc = gspread.authorize(creds)
