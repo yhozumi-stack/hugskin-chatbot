@@ -473,6 +473,6 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 - [x] 本番LPへのタグ展開 + 実機確認(2026-07-06完了、**本番CV確認済み**)
 - [x] UptimeRobot設定(2026-07-06完了。chatbot.js/hugskin.shopを5分間隔監視。無料プランはSlack直結不可のためGmail転送フィルタ経由で#hugskin_chatbot_alertへ通知。下記「外形監視」章を参照)
 - [ ] ダッシュボードの実データでの表示確認(2026-07-07朝以降、シートを開くだけ)
-- [ ] **離脱ポップアップ(popup.js)の本番投入**(2026-07-07ローカル検証済み・未デプロイ): ①push ②タグ登録(レシピP1) ③iOS実機でスワイプバック/戻る挙動を確認 ④UptimeRobotにpopup.js配信URLのモニター追加 ⑤ダッシュボードにpopup_show/popup_cta行を追加
+- [ ] **離脱ポップアップ(popup.js)の本番投入**: [x]①push(v1.2.0配信済) [x]③iOS実機で戻る/スワイプバック挙動を確認(2026-07-08 OK) [x]⑤ダッシュボード行21-31追加済 / 残: [ ]②本番LPへタグ登録(使用タグ= tags/ecforce_popup_tag_cta_image_button.html。画像CTA版・?v=3) [ ]④UptimeRobotにpopup.js配信URLのモニター追加
 - [ ] 本番form-plusの金額設定確認(確認モーダルの静的金額1,980円 vs ecforce実計算2,980円のズレを2026-07-06に発見済み)
 - [ ] (モードB利用時のみ) 遷移先テンプレートへの自動入力スクリプト設置
