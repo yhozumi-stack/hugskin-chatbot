@@ -114,8 +114,9 @@ if (/[?&]closeconfirm/.test(location.search)) {
    imgurl はエンコード不要(&を含むURLだけ encodeURIComponent する) */
 (function () {
   var q = new URLSearchParams(location.search);
-  if (!q.get('imgurl') && !q.get('ctabottom') && !q.get('ctawidth')) return;
+  if (!q.get('imgurl') && !q.get('ctabottom') && !q.get('ctawidth') && !q.get('ctaimg')) return;
   if (q.get('imgurl'))    window.HS_POPUP.image = q.get('imgurl');
+  if (q.get('ctaimg'))    window.HS_POPUP.ctaImage = q.get('ctaimg');   /* 独立CTA画像(v1.2.0) */
   if (q.get('ctabottom')) window.HS_POPUP.ctaBottom = q.get('ctabottom').replace(/%?$/, '%');
   if (q.get('ctawidth'))  window.HS_POPUP.ctaWidth  = q.get('ctawidth').replace(/%?$/, '%');
   if (q.get('ctatext'))   window.HS_POPUP.ctaText   = q.get('ctatext');

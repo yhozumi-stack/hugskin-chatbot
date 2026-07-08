@@ -1,0 +1,37 @@
+<!-- ============================================================
+  HugSkin LP離脱ポップアップ
+  背景画像 + 独立CTA画像ボタン版
+
+  ecforceタグ管理で、チャットボットタグの下に貼る。
+
+  仕組み:
+  - image: ポップアップの背景画像
+  - ctaImage: 独立したクリック可能なボタン画像
+  - 画像本体は押せず、ボタン画像だけクリック可能
+  - ctaAction: 'chat' なので、押すとチャットボットを開く
+
+  テスト用:
+  - delay5000: 5秒で表示
+  - oncePer: 'always': 毎回表示
+
+  本番用:
+  - triggers: ['back', 'delay60000']
+  - oncePer: 'session'
+  ============================================================ -->
+<script>
+window.HS_POPUP = {
+  triggers: ['back', 'delay5000'],
+
+  image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_exit_popup_full_original_500x750.png?v=1',
+  ctaImage: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_exit_popup_cta_from_original.png?v=1',
+
+  ctaText: 'お得に試してみる',
+  ctaAction: 'chat',
+  ctaBottom: '1.6%',
+  ctaWidth: '87.2%',
+
+  closeText: '',
+  oncePer: 'always'
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/popup.js?v=3" defer></script>
