@@ -1,0 +1,45 @@
+<!-- ============================================================
+  HugSkin LP離脱ポップアップ
+  画像表示 + 独立HTMLボタン版
+
+  これは ecforce タグ管理に貼る用です。
+
+  仕組み:
+  - image に背景画像を指定
+  - imageClickable は指定しない(false)
+  - 画像そのものはクリック不可
+  - 下に重ねたHTMLのCTAボタンだけクリック可能
+  - ctaAction: 'chat' なので、押すとチャットボットを開く
+
+  本番前にやること:
+  - GitHub Pagesへ画像反映後、下記 image URL がブラウザで開けることを確認
+    https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_exit_popup_bg_no_button_500x750.png
+  - 本番は triggers を ['back', 'delay60000'] にする
+  - 本番は oncePer を 'session' にする
+  ============================================================ -->
+<script>
+window.HS_POPUP = {
+  /* テスト: 5秒後にも出す。本番は ['back', 'delay60000'] 推奨 */
+  triggers: ['back', 'delay5000'],
+
+  /* 背景画像。画像自体は押せない */
+  image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_exit_popup_bg_no_button_500x750.png',
+
+  /* imageClickable: true は入れない。入れると画像全体クリックになる */
+
+  /* 独立HTMLボタン */
+  ctaText: 'お得に試してみる',
+  ctaAction: 'chat',
+  ctaBottom: '4%',
+  ctaWidth: '86%',
+  theme: {
+    brand: '#07943f'
+  },
+
+  closeText: '',
+
+  /* テスト: 毎回出す。本番は 'session' 推奨 */
+  oncePer: 'always'
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/popup.js?v=2" defer></script>
