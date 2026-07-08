@@ -449,8 +449,8 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 
 | 監視 | 間隔 | 通知先 | 実体 |
 |---|---|---|---|
-| UptimeRobot(外部) | 5分 | メール + Slack #hugskin_chatbot_alert | chatbot.js配信URL と hugskin.shop の2モニター |
-| healthcheck.yml(GitHub内) | 6時間 | GitHubからオーナーへメール | GitHub自体の障害時はこちらも止まる点に注意 |
+| UptimeRobot(外部) | 5分 | メール + Slack #hugskin_chatbot_alert | chatbot.js / popup.js の配信URL と hugskin.shop の3モニター(popup.jsは2026-07-08追加) |
+| healthcheck.yml(GitHub内) | 6時間 | GitHubからオーナーへメール | chatbot.js + popup.js の配信+中身+サイズを確認。GitHub自体の障害時はこちらも止まる点に注意 |
 
 - UptimeRobotアカウント: y.hozumi@triber.co.jp(**無料プラン**。ダッシュボード= https://dashboard.uptimerobot.com/monitors )
 - **⚠️無料プランの制約**: Slack/Webhook連携・通知先メールの追加(Team members)は全部有料限定。そのため**Slack通知はGmail転送フィルタで実現**している:
@@ -473,6 +473,6 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 - [x] 本番LPへのタグ展開 + 実機確認(2026-07-06完了、**本番CV確認済み**)
 - [x] UptimeRobot設定(2026-07-06完了。chatbot.js/hugskin.shopを5分間隔監視。無料プランはSlack直結不可のためGmail転送フィルタ経由で#hugskin_chatbot_alertへ通知。下記「外形監視」章を参照)
 - [ ] ダッシュボードの実データでの表示確認(2026-07-07朝以降、シートを開くだけ)
-- [x] **離脱ポップアップ(popup.js)の本番投入**(2026-07-08本番稼働): ①push(v1.2.0) ②本番LPへタグ登録(画像CTA版・triggers:['back','delay60000']/oncePer:'session'/ctaBottom:'1.6%'/ctaWidth:'87.2%') ③iOS実機で戻る/スワイプバック確認OK ⑤ダッシュボード行21-31 / 残: [ ]④UptimeRobotにpopup.js配信URLのモニター追加(healthcheck.ymlの6時間監視は稼働中)
+- [x] **離脱ポップアップ(popup.js)の本番投入完了**(2026-07-08本番稼働): ①push(v1.2.0) ②本番LPへタグ登録(画像CTA版・triggers:['back','delay60000']/oncePer:'session'/ctaBottom:'1.6%'/ctaWidth:'87.2%') ③iOS実機で戻る/スワイプバック確認OK ④UptimeRobotにpopup.jsモニター追加(5分間隔・monitor id 803463253) ⑤ダッシュボード行21-31
 - [ ] 本番form-plusの金額設定確認(確認モーダルの静的金額1,980円 vs ecforce実計算2,980円のズレを2026-07-06に発見済み)
 - [ ] (モードB利用時のみ) 遷移先テンプレートへの自動入力スクリプト設置
