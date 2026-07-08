@@ -1853,6 +1853,42 @@ function setSilent(scope, name, val) {
   var el = scope.querySelector('[name="' + name + '"]');
   if (el) el.value = val;
 }
+/* カード欄は人の手入力に近いイベント列で転記する。
+   ⚠️ZEUSの3Dセキュアは input イベントだけでは検証状態が立たず、autoSubmit時に
+   全カードが「104: カード情報を確認してください」で弾かれる(2026-07-09実測で特定)。
+   text欄=focus→(1文字ずつ keydown/input/keyup)→change→blur、select(月/年)=focus→change→blur。
+   InputEvent非対応環境では通常のinputイベントにフォールバックする。 */
+function typeCardValue(el, val) {
+  if (!el || val == null || val === '') return;
+  var inputEvt = function (ch) {
+    try { return new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }); }
+    catch (e) { return new Event('input', { bubbles: true }); }
+  };
+  try { el.focus(); } catch (e) {}
+  el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+  if (el.tagName === 'SELECT') {
+    el.value = val;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    el.value = '';
+    var s = String(val);
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      el.value += ch;
+      el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: ch }));
+      el.dispatchEvent(inputEvt(ch));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: ch }));
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+  try { el.blur(); } catch (e) {}
+}
+function setCardField(scope, name, val) {
+  typeCardValue(scope.querySelector('[name="' + name + '"]'), val);
+}
 
 /* silent=true にするとイベントを一切発火させず値だけ入れる。
    (送信直前の最終固定用。ecforceのAJAX再描画による値の巻き戻し対策) */
@@ -1884,19 +1920,17 @@ function fillLocalForm(form, silent) {
   }
   put(form, 'order[payment_attributes][payment_method_id]', answers.payment);
 
-  /* カード情報(クレジット選択時のみ)。LP内のVeriTransフォーム欄への直接転記のみで
-     外部送信・URLパラメータ化は一切しない */
-  if (answers.card_number && (answers.payment_label || '').indexOf('クレジット') >= 0) {
-    put(form, 'order[payment_attributes][source_attributes][number]', answers.card_number);
-    put(form, 'order[payment_attributes][source_attributes][month]', answers.card_month);
-    put(form, 'order[payment_attributes][source_attributes][year]', answers.card_year);
-    put(form, 'order[payment_attributes][source_attributes][name]', answers.card_name);
+  /* カード情報(クレジット選択時のみ)。LP内のZEUSフォーム欄への直接転記のみで外部送信・URLパラメータ化は一切しない。
+     ⚠️カード欄は「イベント付きの初回転記(setCardField)」のみ。silent再固定では絶対に触らない。
+     イベントなしの値上書きはZEUSの3DS検証状態を壊し、直後のautoSubmitが104で弾かれる(2026-07-09実測)。
+     カード欄は郵便番号AJAX等で巻き戻されないので、再固定から外しても値は保持される。 */
+  if (!silent && answers.card_number && (answers.payment_label || '').indexOf('クレジット') >= 0) {
+    setCardField(form, 'order[payment_attributes][source_attributes][number]', answers.card_number);
+    setCardField(form, 'order[payment_attributes][source_attributes][month]', answers.card_month);
+    setCardField(form, 'order[payment_attributes][source_attributes][year]', answers.card_year);
+    setCardField(form, 'order[payment_attributes][source_attributes][name]', answers.card_name);
     if (answers.card_sec) {
-      var secEl = form.querySelector(CVV_SELECTOR) || document.querySelector(CVV_SELECTOR);
-      if (secEl) {
-        secEl.value = answers.card_sec;
-        if (!silent) secEl.dispatchEvent(new Event('input', { bubbles: true }));
-      }
+      typeCardValue(form.querySelector(CVV_SELECTOR) || document.querySelector(CVV_SELECTOR), answers.card_sec);
     }
   }
   /* 後払い同意チェックは意図的に触らない(お客様自身が同意する) */
