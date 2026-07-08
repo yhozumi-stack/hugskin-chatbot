@@ -1398,16 +1398,40 @@ function renderAddress(s, i) {
     if (!/^\d{7}$/.test(z) || searching) return;
     searching = true;
     searchBtn.textContent = '検索中…';
-    fetch(CFG.zipApi + z).then(function (res) { return res.json(); }).then(function (j) {
-      if (j && j.results && j.results[0]) {
-        prefSel.value = j.results[0].address1;
-        cityIn.value = (j.results[0].address2 || '') + (j.results[0].address3 || '');
-      }
-    }).catch(function () {}).then(function () {
+    /* 住所欄はAPIを待たずに即表示する(zipcloudが遅くても手入力で先へ進める)。
+       フォーカスは移さない=郵便番号を打ち終えた直後に入力位置が飛ぶのを防ぐ */
+    reveal();
+
+    /* 3秒タイムアウト。APIが遅い/無応答でも「検索中…」で固まらないようにする。
+       AbortControllerで実リクエストも中断する(未対応環境はタイマーのみで復帰) */
+    var done = false;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () {
+      if (ctrl) { try { ctrl.abort(); } catch (e) {} }
+      finish(false);
+    }, 3000);
+    function finish(filled) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
       searching = false;
       searchBtn.textContent = '郵便番号から住所を検索';
-      reveal(banchiIn);   // 検索が終わったら(失敗しても手入力用に)住所欄を開く
-    });
+      if (filled) reveal(banchiIn);   // 補完できたら番地欄へフォーカス誘導
+    }
+
+    fetch(CFG.zipApi + z, ctrl ? { signal: ctrl.signal } : undefined)
+      .then(function (res) { return res.json(); })
+      .then(function (j) {
+        var ok = false;
+        if (j && j.results && j.results[0]) {
+          /* 既にユーザーが手入力している欄は上書きしない(遅延応答で入力が消える事故を防ぐ) */
+          if (!prefSel.value) prefSel.value = j.results[0].address1;
+          if (!cityIn.value.trim()) cityIn.value = (j.results[0].address2 || '') + (j.results[0].address3 || '');
+          ok = true;
+        }
+        finish(ok);
+      })
+      .catch(function () { finish(false); });
   }
   searchBtn.addEventListener('click', doSearch);
   var autoZip = '';
