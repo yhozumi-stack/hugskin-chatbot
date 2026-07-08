@@ -14,24 +14,25 @@
 ============================================================ -->
 <script>
 window.HS_CHAT = {
-  scenario: 'formplus',
+  scenario: 'formplus',                  /* form-plus再現シナリオ */
   vars: {
-    PRICE: '2,980円（税込）',
+    PRICE: '2,980円（税込）',            /* 挨拶では未使用(formplusは名前質問が冒頭)。残してOK */
   },
   mode: 'float',
-  autoOpen: 'immediate',
-  openTriggers: 'a[href="#lp-form"]',
-  countdown: true,
-  summaryOptions: { modal: true },
-  stepImages: {
+  autoOpen: 'immediate',                 /* 初回から自動起動 */
+  openTriggers: 'a[href="#lp-form"]',    /* CTAボタンで再オープン */
+  launcher: false,                       /* フローティングバナーを非表示 */
+  countdown: true,                       /* カウントダウンバー */
+  summaryOptions: { modal: true },       /* 確認画面をモーダルで */
+  stepImages: {                          /* 支払い質問の直前にクレカ訴求画像 */
     payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
   },
-  paymentLabels: {
+  paymentLabels: {                       /* 支払いボタンの表示文言 */
     'クレジット': 'クレジットカード【手数料0円】',
     '後払い': 'ベリトランス後払い（コンビニ後払い）',
   },
   opening: {
-    images: [
+    images: [                            /* 冒頭画像(不要なら2行とも削除) */
       'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
       'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
     ],
@@ -41,8 +42,9 @@ window.HS_CHAT = {
     title: '初回限定チャットを閉じますか？',
     leaveText: '閉じる',
     stayText: 'チャットに戻る',
-    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_offer_680w.png?v=1',
+    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_offer_680w.webp?v=1',
   },
+  /* 後払い規約文(codNotice)は既定で同梱済みなので書かなくてよい */
 };
 </script>
 <script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=19" defer></script>

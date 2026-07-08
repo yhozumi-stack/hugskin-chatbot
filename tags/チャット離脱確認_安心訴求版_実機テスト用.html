@@ -19,8 +19,8 @@ window.HS_CHAT = {
     PRICE: '2,980円（税込）',            /* 挨拶では未使用(formplusは名前質問が冒頭)。残してOK */
   },
   mode: 'float',
-  autoOpen: 'manual',                    /* 初回自動起動なし */
-  openTriggers: 'a[href="#lp-form"]',    /* CTAボタンでオープン */
+  autoOpen: 'immediate',                 /* 初回から自動起動 */
+  openTriggers: 'a[href="#lp-form"]',    /* CTAボタンで再オープン */
   launcher: false,                       /* フローティングバナーを非表示 */
   countdown: true,                       /* カウントダウンバー */
   summaryOptions: { modal: true },       /* 確認画面をモーダルで */
@@ -42,7 +42,7 @@ window.HS_CHAT = {
     title: '初回限定チャットを閉じますか？',
     leaveText: '閉じる',
     stayText: 'チャットに戻る',
-    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_reassurance_680w.png?v=1',
+    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_reassurance_680w.webp?v=1',
   },
   /* 後払い規約文(codNotice)は既定で同梱済みなので書かなくてよい */
 };
