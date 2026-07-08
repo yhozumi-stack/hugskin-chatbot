@@ -1,5 +1,6 @@
 /*! ============================================================
-    LP離脱ポップアップ popup.js v1.1.0
+    LP離脱ポップアップ popup.js v1.1.1
+    (v1.1.1: 表示時の画像読み込み失敗にも onerror フォールバックを追加)
     (v1.1.0: 画像URLが404等で読めない時はテキストモードに自動フォールバック
      +hs_chat_errorで計測に通知)
     ------------------------------------------------------------
@@ -197,6 +198,7 @@ function showable() {
 
 /* ---------- DOM生成(Shadow DOMでLPのCSSと完全隔離) ---------- */
 var host = null, shadow = null;
+var imageErrorReported = false;
 function buildCss() {
   var b = CFG.theme.brand, t = CFG.theme.text;
   return ''
@@ -247,9 +249,29 @@ function removePopup() {
   host = null; shadow = null;
 }
 
-function show(trigger) {
+function reportImageError(url) {
+  if (imageErrorReported) return;
+  imageErrorReported = true;
+  try {
+    if (window.dataLayer) window.dataLayer.push({
+      event: 'hs_chat_error',
+      hs_error: ('popup image unreachable: ' + url).slice(0, 200),
+    });
+    if (window.clarity) window.clarity('event', 'hs_chat_error');
+  } catch (e) {}
+}
+
+function fallbackImageToText() {
+  if (!CFG.image) return false;
+  reportImageError(CFG.image);
+  CFG.image = '';
+  CFG.imageClickable = false;
+  return true;
+}
+
+function show(trigger, isRerender) {
   if (host) return;             // 表示中なら何もしない
-  markShown();
+  if (!isRerender) markShown();
 
   host = document.createElement('div');
   host.setAttribute('data-hs-popup', '');
@@ -269,7 +291,7 @@ function show(trigger) {
        imageClickable:true なら ada-cloud式(画像全体がCTA・重ねボタンなし) */
     html = '<div class="card imgcard' + (CFG.imageClickable ? ' clickable' : '') + '">'
       + '<button class="x" type="button" aria-label="閉じる">✕</button>'
-      + '<img class="img" src="' + esc(CFG.image) + '" alt="">'
+      + '<img class="img" alt="">'
       + (CFG.imageClickable ? '' : '<button class="cta ctaover" type="button">' + esc(cta) + '</button>')
       + (CFG.closeText ? '<div class="laterbar"><button class="later" type="button">' + esc(CFG.closeText) + '</button></div>' : '')
       + '</div>';
@@ -291,10 +313,21 @@ function show(trigger) {
     html += '</div></div>';
   }
   ov.innerHTML = html;
+  var imgEl = ov.querySelector('.img');
+  var imgSrc = '';
+  if (imgEl && CFG.image) {
+    imgSrc = CFG.image;
+    imgEl.addEventListener('error', function () {
+      if (!host || !imgEl.isConnected || !fallbackImageToText()) return;
+      removePopup();
+      show(trigger, true);
+    });
+  }
   shadow.appendChild(ov);
   document.body.appendChild(host);
+  if (imgEl && imgSrc) imgEl.src = imgSrc;
 
-  track('popup_show', trigger);
+  if (!isRerender) track('popup_show', trigger);
 
   function close() { track('popup_close', trigger); removePopup(); }
   ov.querySelector('.x').addEventListener('click', close);
@@ -309,7 +342,7 @@ function show(trigger) {
   }
   var ctaEl = ov.querySelector('.cta');
   if (ctaEl) ctaEl.addEventListener('click', onCta);
-  if (CFG.image && CFG.imageClickable) ov.querySelector('.img').addEventListener('click', onCta);
+  if (CFG.image && CFG.imageClickable && imgEl) imgEl.addEventListener('click', onCta);
 }
 
 /* ---------- CTAの飛び先 ---------- */
@@ -408,17 +441,7 @@ function setupVisibility() {
 function preloadImage() {
   if (!CFG.image) return;
   var im = new Image();
-  im.onerror = function () {
-    try {
-      if (window.dataLayer) window.dataLayer.push({
-        event: 'hs_chat_error',
-        hs_error: ('popup image unreachable: ' + CFG.image).slice(0, 200),
-      });
-      if (window.clarity) window.clarity('event', 'hs_chat_error');
-    } catch (e) {}
-    CFG.image = '';            // テキストモードへフォールバック
-    CFG.imageClickable = false;
-  };
+  im.onerror = fallbackImageToText;
   im.src = CFG.image;
 }
 
