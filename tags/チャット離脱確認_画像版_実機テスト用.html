@@ -1,0 +1,48 @@
+<!-- ============================================================
+  HugSkin チャットボット タグ【チャット離脱確認 closeConfirm 画像版】
+  ------------------------------------------------------------
+  ecforce タグ管理: このまま全部コピーして1つのタグとして登録(位置: body)
+
+  役割:
+  - チャットの×を押した時に「閉じる / チャットに戻る」の確認を出す
+  - 白い確認UIは chatbot.js が描画
+  - 下の画像だけ closeConfirm.image で差し替え
+
+  注意:
+  - LP離脱POP側の HS_POPUP triggers に 'chatclose' は入れない
+  - 二重引き止めを避けるため、チャット閉じ対策は closeConfirm 側だけで行う
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus',
+  vars: {
+    PRICE: '2,980円（税込）',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  openTriggers: 'a[href="#lp-form"]',
+  countdown: true,
+  summaryOptions: { modal: true },
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（コンビニ後払い）',
+  },
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+  closeConfirm: {
+    title: '初回限定チャットを閉じますか？',
+    leaveText: '閉じる',
+    stayText: 'チャットに戻る',
+    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_offer_680w.png?v=1',
+  },
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=19" defer></script>
