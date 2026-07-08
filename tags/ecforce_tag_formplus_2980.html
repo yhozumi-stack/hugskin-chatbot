@@ -17,6 +17,7 @@ window.HS_CHAT = {
   countdown: true,                       /* カウントダウンバー */
   summaryOptions: { modal: true },       /* 確認画面をモーダルで */
   cardCvv: false,                        /* ZEUSがセキュリティコード不要設定のため、隠れCVV欄があっても聞かない・転記しない */
+  autoSubmit: false,                     /* 3Dセキュア有効化(2026-07-08)によりボットの自動送信は3DS未認証オーソリで104になる。お客様の実クリックで確認画面→3DSの正規フローに乗せる */
   stepImages: {                          /* 支払い質問の直前にクレカ訴求画像 */
     payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
   },
