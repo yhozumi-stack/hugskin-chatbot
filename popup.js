@@ -1,5 +1,6 @@
 /*! ============================================================
-    LP離脱ポップアップ popup.js v1.1.1
+    LP離脱ポップアップ popup.js v1.2.0
+    (v1.2.0: 画像モードの独立CTAに画像ボタン(ctaImage)を指定可能に)
     (v1.1.1: 表示時の画像読み込み失敗にも onerror フォールバックを追加)
     (v1.1.0: 画像URLが404等で読めない時はテキストモードに自動フォールバック
      +hs_chat_errorで計測に通知)
@@ -16,6 +17,7 @@
     見た目は2モード(imageの有無で自動切替):
       画像モード   … image を設定 → 画像(GIF可)+その上に重ねたCTAボタン。
                      画像自体は押せない(ボタンと×だけ反応)。
+                     ctaImage を設定すると、HTML文字ボタンではなく画像ボタンを重ねる。
                      ada-cloud式の「ボタン焼き込み1枚GIF・画像全体クリック」に
                      したい時だけ imageClickable: true
       テキストモード … image が空 → バッジ+タイトル+本文+CTAボタン
@@ -56,6 +58,7 @@ var DEFAULTS = {
      badge/title/linesは使われない(コピーは画像に焼き込む前提) */
   image: '',                              // 画像URL(GIF可)。空ならテキストモード
   imageClickable: false,                  // trueで画像全体をCTA化(ada-cloud式のボタン焼き込みGIF用)
+  ctaImage: '',                           // 画像モード: 独立CTAを画像ボタンにしたい時の画像URL
   ctaBottom: '7%',                        // 画像モード: ボタンの画像下端からの位置
   ctaWidth: '78%',                        // 画像モード: ボタンの幅
   title: 'ちょっとお待ちください！',
@@ -220,20 +223,24 @@ function buildCss() {
   +   'margin:0 auto;box-shadow:0 12px 40px rgba(0,0,0,.25)}'
   + '.imgcard.clickable .img{pointer-events:auto;cursor:pointer}'
   /* .cta.ctaover の2クラス指定は必須(後方で定義される .cta{width:100%} に負けないため) */
-  + '.cta.ctaover{position:absolute;left:50%;transform:translateX(-50%);bottom:' + CFG.ctaBottom + ';'
-  +   'width:' + CFG.ctaWidth + ';margin:0;animation:hspPulse 1.6s ease-in-out infinite}'
-  + '@keyframes hspPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.04)}}'
-  + '.laterbar{text-align:center;padding:2px 0 0}'
+	  + '.cta.ctaover{position:absolute;left:50%;transform:translateX(-50%);bottom:' + CFG.ctaBottom + ';'
+	  +   'width:' + CFG.ctaWidth + ';margin:0;animation:hspPulse 1.6s ease-in-out infinite}'
+	  + '@keyframes hspPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.04)}}'
+	  + '.cta.imgcta{background:transparent;border:none;border-radius:0;padding:0;box-shadow:none;line-height:0}'
+	  + '.cta.imgcta .ctaimg{display:block;width:100%;height:auto;border-radius:999px;'
+	  +   'box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:none}'
+	  + '.laterbar{text-align:center;padding:2px 0 0}'
   + '.laterbar .later{color:#eee;text-shadow:0 1px 3px rgba(0,0,0,.5)}'
   + '.body{padding:20px 20px 18px;text-align:center}'
   + '.badge{display:inline-block;background:' + b + ';color:#fff;font-size:11px;font-weight:700;'
   +   'border-radius:999px;padding:3px 12px;margin-bottom:8px}'
   + '.title{font-size:18px;font-weight:700;line-height:1.4;margin:0 0 10px}'
   + '.line{font-size:13.5px;line-height:1.7;margin:0 0 6px}'
-  + '.cta{display:block;width:100%;border:none;border-radius:999px;background:' + b + ';color:#fff;'
-  +   'font-size:15.5px;font-weight:700;padding:14px 10px;margin:14px 0 0;cursor:pointer;'
-  +   'box-shadow:0 4px 14px rgba(0,0,0,.18)}'
-  + '.cta:active{transform:scale(.98)}'
+	  + '.cta{display:block;width:100%;border:none;border-radius:999px;background:' + b + ';color:#fff;'
+	  +   'font-size:15.5px;font-weight:700;padding:14px 10px;margin:14px 0 0;cursor:pointer;'
+	  +   'box-shadow:0 4px 14px rgba(0,0,0,.18)}'
+	  + '.cta:active{transform:scale(.98)}'
+	  + '.cta.ctaover:active{transform:translateX(-50%) scale(.98)}'
   + '.later{display:inline-block;margin-top:12px;font-size:12px;color:#999;background:none;border:none;'
   +   'text-decoration:underline;cursor:pointer;padding:4px}';
 }
@@ -286,15 +293,18 @@ function show(trigger, isRerender) {
 
   var html;
   var cta = fillVars(CFG.ctaText) || 'ご案内を見る';
-  if (CFG.image) {
-    /* 画像モード: 画像(GIF可)+重ねCTAボタン。画像自体は押せない。
-       imageClickable:true なら ada-cloud式(画像全体がCTA・重ねボタンなし) */
-    html = '<div class="card imgcard' + (CFG.imageClickable ? ' clickable' : '') + '">'
-      + '<button class="x" type="button" aria-label="閉じる">✕</button>'
-      + '<img class="img" alt="">'
-      + (CFG.imageClickable ? '' : '<button class="cta ctaover" type="button">' + esc(cta) + '</button>')
-      + (CFG.closeText ? '<div class="laterbar"><button class="later" type="button">' + esc(CFG.closeText) + '</button></div>' : '')
-      + '</div>';
+	  if (CFG.image) {
+	    /* 画像モード: 画像(GIF可)+重ねCTAボタン。画像自体は押せない。
+	       imageClickable:true なら ada-cloud式(画像全体がCTA・重ねボタンなし) */
+	    var ctaHtml = CFG.ctaImage
+	      ? '<button class="cta ctaover imgcta" type="button" aria-label="' + esc(cta) + '"><img class="ctaimg" alt="" src=""></button>'
+	      : '<button class="cta ctaover" type="button">' + esc(cta) + '</button>';
+	    html = '<div class="card imgcard' + (CFG.imageClickable ? ' clickable' : '') + '">'
+	      + '<button class="x" type="button" aria-label="閉じる">✕</button>'
+	      + '<img class="img" alt="">'
+	      + (CFG.imageClickable ? '' : ctaHtml)
+	      + (CFG.closeText ? '<div class="laterbar"><button class="later" type="button">' + esc(CFG.closeText) + '</button></div>' : '')
+	      + '</div>';
   } else {
     /* テキストモード: バッジ+タイトル+本文+CTA */
     html = '<div class="card">'
@@ -313,8 +323,9 @@ function show(trigger, isRerender) {
     html += '</div></div>';
   }
   ov.innerHTML = html;
-  var imgEl = ov.querySelector('.img');
-  var imgSrc = '';
+	  var imgEl = ov.querySelector('.img');
+	  var ctaImgEl = ov.querySelector('.ctaimg');
+	  var imgSrc = '';
   if (imgEl && CFG.image) {
     imgSrc = CFG.image;
     imgEl.addEventListener('error', function () {
@@ -323,9 +334,18 @@ function show(trigger, isRerender) {
       show(trigger, true);
     });
   }
-  shadow.appendChild(ov);
-  document.body.appendChild(host);
-  if (imgEl && imgSrc) imgEl.src = imgSrc;
+	  shadow.appendChild(ov);
+	  document.body.appendChild(host);
+	  if (imgEl && imgSrc) imgEl.src = imgSrc;
+	  if (ctaImgEl && CFG.ctaImage) {
+	    ctaImgEl.addEventListener('error', function () {
+	      var btn = ctaImgEl.parentNode;
+	      if (!btn) return;
+	      btn.className = 'cta ctaover';
+	      btn.textContent = cta;
+	    });
+	    ctaImgEl.src = CFG.ctaImage;
+	  }
 
   if (!isRerender) track('popup_show', trigger);
 
