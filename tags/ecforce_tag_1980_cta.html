@@ -9,6 +9,7 @@
 <script>
 window.HS_CHAT = {
   scenario: 'standard',
+  cardCvv: false,   /* ZEUSがセキュリティコード不要設定のため、隠れCVV欄があっても聞かない・転記しない */
   vars: {
     /* 商品名・金額は LP から自動取得されるので書かなくてよい */
     PRICE: '初回限定 1,980円（税込）',   /* 挨拶文用(消せば価格文言なし) */
