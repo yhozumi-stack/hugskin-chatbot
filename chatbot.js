@@ -1416,12 +1416,20 @@ function renderAddress(s, i) {
       clearTimeout(timer);
       searching = false;
       searchBtn.textContent = '郵便番号から住所を検索';
-      if (filled) reveal(banchiIn);   // 補完できたら番地欄へフォーカス誘導
+      if (filled) { reveal(banchiIn); return; }   // 補完できたら番地欄へフォーカス誘導
+      /* 検索中に郵便番号が別の7桁へ変わっていたら、新しい番号で検索し直す。
+         (searchingガードで保留になっていた分の取りこぼしを拾う) */
+      var cur = NORMS.zip(zipIn.value);
+      if (/^\d{7}$/.test(cur) && cur !== z) doSearch();
     }
 
     fetch(CFG.zipApi + z, ctrl ? { signal: ctrl.signal } : undefined)
       .then(function (res) { return res.json(); })
       .then(function (j) {
+        if (done) return;   // タイムアウト済みなら触らない
+        /* 検索開始時と郵便番号が変わっていたら、古いAPI結果は捨てる
+           (遅延応答が古い住所を都道府県・市区町村へ入れてしまう事故を防ぐ) */
+        if (NORMS.zip(zipIn.value) !== z) return finish(false);
         var ok = false;
         if (j && j.results && j.results[0]) {
           /* 既にユーザーが手入力している欄は上書きしない(遅延応答で入力が消える事故を防ぐ) */
