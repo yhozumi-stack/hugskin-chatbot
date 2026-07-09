@@ -112,6 +112,37 @@ def query(url_dim: str, event_filter, by_date: bool):
     return agg
 
 
+def query_events(by_date: bool):
+    """hs_chat_* を eventName×variant別に集計(botステップ用)。metric=イベント名(prefix除去)。"""
+    dims = ([Dimension(name="date")] if by_date else []) + \
+           [Dimension(name="eventName"), Dimension(name="customEvent:hs_page")]
+    req = RunReportRequest(
+        property=f"properties/{PID}",
+        date_ranges=[DateRange(start_date=f"{WINDOW}daysAgo", end_date="today")],
+        dimensions=dims,
+        metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
+        dimension_filter=FilterExpression(filter=Filter(field_name="eventName",
+            string_filter=Filter.StringFilter(
+                match_type=Filter.StringFilter.MatchType.BEGINS_WITH, value="hs_chat_"))),
+        limit=100000,
+    )
+    agg = {}
+    for r in client.run_report(req).rows:
+        d = r.dimension_values
+        i = 0
+        ymd = ""
+        if by_date:
+            ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
+            i = 1
+        ev = d[i].value.replace("hs_chat_", "")
+        var = variant_of(u_from(d[i + 1].value or ""))
+        key = (ymd, var, ev) if by_date else (var, ev)
+        cur = agg.setdefault(key, {"sessions": 0, "users": 0})
+        cur["sessions"] += int(r.metric_values[0].value)
+        cur["users"] += int(r.metric_values[1].value)
+    return agg
+
+
 # 着地が "/lp" または "/lp?..." のものだけ(=真のLP入口)。/lp/confirm や /lp/new は除外(Codex指摘①)
 LANDING_FILTER = FilterExpression(filter=Filter(field_name="landingPagePlusQueryString",
     string_filter=Filter.StringFilter(match_type=Filter.StringFilter.MatchType.FULL_REGEXP, value=r"^/lp(\?.*)?$")))
@@ -122,16 +153,81 @@ SPECS = [
 ]
 
 
+# ダッシュボードのファネル(表示名, variant_dailyのmetric名)。順序=既存ダッシュボード踏襲
+FUNNEL = [
+    ("LP流入", "landing"), ("ボット起動", "open"), ("名前", "step_name"),
+    ("生年月日", "step_birth"), ("性別", "step_sex"), ("パスワード", "step_password"),
+    ("郵便番号", "step_zip"), ("住所", "step_addr"), ("連絡先", "step_contact"),
+    ("支払い方法", "step_payment"), ("カード", "step_card"), ("確認画面", "summary_view"),
+    ("自動送信", "auto_submit"), ("CV(購入)", "purchase"),
+]
+
+
+def ensure_dashboard(sh, existing):
+    """variant_dashboard タブを作る(無ければ)。期間/バリアントをセルで切替、
+    variant_daily から SUMPRODUCT で集計する数式(=日付/バリアントを変えると即再計算)。
+    既に有れば触らない(ユーザーの選択セルを保持)。"""
+    if "variant_dashboard" in existing:
+        print("variant_dashboard: 既存につき保持")
+        return
+    today = datetime.now(timezone(timedelta(hours=9))).date()
+    start = (today - timedelta(days=14)).isoformat()
+    D = "variant_daily"  # 参照先
+    A, Bc = f"{D}!$A$2:$A$5000", f"{D}!$B$2:$B$5000"
+    Cc, Dc = f"{D}!$C$2:$C$5000", f"{D}!$D$2:$D$5000"
+    vals = [
+        ["期間", start, "〜", today.isoformat()],
+        ["バリアント", "ins29", "", ""],
+        ["", "", "", ""],
+        ["ステップ", "到達(sess)", "通過率", "離脱率", "", "metric"],
+    ]
+    n = len(FUNNEL)
+    for j, (label, metric) in enumerate(FUNNEL):
+        r = 5 + j
+        reach = (f'=IFERROR(SUMPRODUCT(({A}>=TEXT($B$1,"yyyy-mm-dd"))*({A}<=TEXT($D$1,"yyyy-mm-dd"))'
+                 f'*({Bc}=$B$2)*({Cc}=$F{r})*{Dc}),0)')
+        if j == 0:
+            rate = "=IF($B5>0,1,\"\")"
+        else:
+            rng = f"$B$5:$B{r-1}"
+            rate = f'=IFERROR($B{r}/LOOKUP(2,ARRAYFORMULA(1/({rng}>0)),{rng}),"")'
+        drop = f'=IF($C{r}="","",1-$C{r})'
+        vals.append([label, reach, rate, drop, "", metric])
+
+    ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 8), cols=6)
+    ws.update(vals, "A1", value_input_option="USER_ENTERED")
+    last = 4 + n
+    ws.format(f"C5:D{last}", {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}})
+    ws.format("A1:A2", {"textFormat": {"bold": True}})
+    ws.format("A4:F4", {"textFormat": {"bold": True}})
+    # B2にバリアントのプルダウン(失敗しても本体は動く)
+    try:
+        sh.batch_update({"requests": [{"setDataValidation": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2,
+                      "startColumnIndex": 1, "endColumnIndex": 2},
+            "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
+                {"userEnteredValue": v} for v in ["fo", "ins29", "in29", "as29"]]},
+                "showCustomUi": True, "strict": False}}}]})
+    except Exception as e:
+        print(f"  (プルダウン設定skip: {e})")
+    print("variant_dashboard: 作成(期間/バリアント切替式)")
+
+
 def main():
-    # tidy(日次): date × variant × metric
-    daily = {mname: query(dim, filt, by_date=True) for mname, dim, filt in SPECS}
+    # tidy(日次): date × variant × metric。landing + botステップ(hs_chat_*) + purchase
+    land_d = query("landingPagePlusQueryString", LANDING_FILTER, by_date=True)
+    pur_d = query("pagePathPlusQueryString", eq("eventName", "purchase"), by_date=True)
+    ev_d = query_events(by_date=True)
     tidy = [["date", "variant", "metric", "sessions", "users"]]
-    for mname, _dim, _filt in SPECS:
-        for (ymd, var), v in sorted(daily[mname].items()):
-            tidy.append([ymd, var, mname, v["sessions"], v["users"]])
+    for (ymd, var), v in sorted(land_d.items()):
+        tidy.append([ymd, var, "landing", v["sessions"], v["users"]])
+    for (ymd, var, ev), v in sorted(ev_d.items()):
+        tidy.append([ymd, var, ev, v["sessions"], v["users"]])
+    for (ymd, var), v in sorted(pur_d.items()):
+        tidy.append([ymd, var, "purchase", v["sessions"], v["users"]])
     # 稼働期間(landing着地の初回/最終日)= 同時期比較の判断材料(Codex指摘③)
     span = {}
-    for (ymd, var) in daily["landing"]:
+    for (ymd, var) in land_d:
         s = span.setdefault(var, [ymd, ymd])
         s[0], s[1] = min(s[0], ymd), max(s[1], ymd)
 
@@ -196,6 +292,7 @@ def main():
         ws.update(values, "A1")
         print(f"{title}: {len(values)-1} 行 更新")
 
+    ensure_dashboard(sh, existing)
     print("完了(既存 data / ダッシュボード は未変更)")
 
 
