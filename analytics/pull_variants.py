@@ -112,8 +112,9 @@ def query(url_dim: str, event_filter, by_date: bool):
     return agg
 
 
+# 着地が "/lp" または "/lp?..." のものだけ(=真のLP入口)。/lp/confirm や /lp/new は除外(Codex指摘①)
 LANDING_FILTER = FilterExpression(filter=Filter(field_name="landingPagePlusQueryString",
-    string_filter=Filter.StringFilter(match_type=Filter.StringFilter.MatchType.BEGINS_WITH, value="/lp")))
+    string_filter=Filter.StringFilter(match_type=Filter.StringFilter.MatchType.FULL_REGEXP, value=r"^/lp(\?.*)?$")))
 SPECS = [
     ("landing",  "landingPagePlusQueryString", LANDING_FILTER),
     ("bot_open", "customEvent:hs_page",        eq("eventName", "hs_chat_open")),
@@ -123,10 +124,16 @@ SPECS = [
 
 def main():
     # tidy(日次): date × variant × metric
+    daily = {mname: query(dim, filt, by_date=True) for mname, dim, filt in SPECS}
     tidy = [["date", "variant", "metric", "sessions", "users"]]
-    for mname, dim, filt in SPECS:
-        for (ymd, var), v in sorted(query(dim, filt, by_date=True).items()):
+    for mname, _dim, _filt in SPECS:
+        for (ymd, var), v in sorted(daily[mname].items()):
             tidy.append([ymd, var, mname, v["sessions"], v["users"]])
+    # 稼働期間(landing着地の初回/最終日)= 同時期比較の判断材料(Codex指摘③)
+    span = {}
+    for (ymd, var) in daily["landing"]:
+        s = span.setdefault(var, [ymd, ymd])
+        s[0], s[1] = min(s[0], ymd), max(s[1], ymd)
 
     # summary(期間合計・usersは重複除去): variant別 landing/open/purchase の s,u と率
     win = {mname: query(dim, filt, by_date=False) for mname, dim, filt in SPECS}
@@ -142,13 +149,15 @@ def main():
         os_, ou = g("bot_open", var, "sessions"), g("bot_open", var, "users")
         cs, cu = g("purchase", var, "sessions"), g("purchase", var, "users")
         name, state = master.get(var, ("", ""))
-        rows.append([var, name, state, ls, lu, os_, ou, cs, cu,
+        first, last = span.get(var, ["", ""])
+        rows.append([var, name, state, first, last, ls, lu, os_, ou, cs, cu,
                      pct(os_, ls), pct(ou, lu), pct(cs, ls), pct(cu, lu)])
     # 本番(状態あり)を上に、流入(sessions)降順
     order = {"稼働": 0, "テスト中": 1, "停止": 2, "": 9}
-    rows.sort(key=lambda r: (order.get(r[2], 9), -r[3]))
-    summary = [["variant", "名前", "状態", "landing_s", "landing_u", "open_s", "open_u",
-                "cv_s", "cv_u", "起動率_s(%)", "起動率_u(%)", "LPCVR_s(%)", "LPCVR_u(%)"]] + rows
+    rows.sort(key=lambda r: (order.get(r[2], 9), -r[5]))
+    summary = [["variant", "名前", "状態", "初回着地", "最終着地", "landing_s", "landing_u",
+                "open_s", "open_u", "cv_s", "cv_u",
+                "起動率_s(%)", "起動率_u(%)", "LPCVR_s(%)", "LPCVR_u(%)"]] + rows
 
     # ---- 表示(dry) ----
     print(f"== variant集計 (直近{WINDOW}日 / property {PID}) ==")
