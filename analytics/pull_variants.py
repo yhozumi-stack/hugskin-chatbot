@@ -193,7 +193,7 @@ def ensure_dashboard(sh, existing):
         ["バリアント", "ins29", "", "", "", ""],
         ["シナリオ", "formplus", "", "", "", ""],
         ["", "", "", "", "", ""],
-        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動(起動後)", "", "metric"],
+        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動(起動後)", "直前比較", "metric"],
     ]
     period = f'({Ad}>=TEXT($B$1,"yyyy-mm-dd"))*({Ad}<=TEXT($D$1,"yyyy-mm-dd"))*({Bd}=$B$2)'
     n = len(FUNNEL)
@@ -208,12 +208,17 @@ def ensure_dashboard(sh, existing):
         # 「対ボット起動」はボット起動以降の行だけ。LP流入/フォーム表示/CTA押下はbot起動より"前"の
         # LPイベントなので分母(ボット起動)にできない→空欄(bot起動列で見ると誤読になる。Codex指摘)
         cover_open = f'=IFERROR($B{r}/$B${open_row},"")' if r >= open_row else ""
-        vals.append([label, reach, cover_lp, cover_open, "", metric])
+        # 直前比較(=残存率): ボット起動より"後"のステップだけ直前の表示行と比較→どこで離脱したかが分かる。
+        # bot内は一本道なので有効(LP側は自動起動/CTA起動で経路が分岐するので出さない)。DIV/0はIFERRORで空に
+        prev = f'=IFERROR($B{r}/$B{r-1},"")' if r > open_row else ""
+        vals.append([label, reach, cover_lp, cover_open, prev, metric])
+    # E列(直前比較)の但し書き。ファネル最終行(=5+n)の1つ下に置く
+    vals.append(["", "", "", "", "※直前比が100%超=1問ずつ修正(✎)の再発火", ""])
 
     ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 10), cols=6)
     ws.update(vals, "A1", value_input_option="USER_ENTERED")
     first, last = 6, 5 + n
-    ws.format(f"C{first}:D{last}", {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}})
+    ws.format(f"C{first}:E{last}", {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}})
     ws.format("A1:A3", {"textFormat": {"bold": True}})
     ws.format("A5:F5", {"textFormat": {"bold": True}})
     # B2=バリアント / B3=シナリオ のプルダウン(失敗しても本体は動く)
