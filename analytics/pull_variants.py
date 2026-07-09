@@ -112,14 +112,14 @@ def query(url_dim: str, event_filter, by_date: bool):
     return agg
 
 
-def query_events(by_date: bool):
-    """hs_chat_* を eventName×variant別に集計(botステップ用)。metric=イベント名(prefix除去)。"""
-    dims = ([Dimension(name="date")] if by_date else []) + \
-           [Dimension(name="eventName"), Dimension(name="customEvent:hs_page")]
+def query_events():
+    """hs_chat_* を date×variant×scenario×event別に集計(botステップ用・variant_daily行)。
+    metric=イベント名(prefix除去)。scenario別に持つ(=formplus/standardの混在を後で切り分け可)。"""
     req = RunReportRequest(
         property=f"properties/{PID}",
         date_ranges=[DateRange(start_date=f"{WINDOW}daysAgo", end_date="today")],
-        dimensions=dims,
+        dimensions=[Dimension(name="date"), Dimension(name="customEvent:hs_scenario"),
+                    Dimension(name="eventName"), Dimension(name="customEvent:hs_page")],
         metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
         dimension_filter=FilterExpression(filter=Filter(field_name="eventName",
             string_filter=Filter.StringFilter(
@@ -129,15 +129,11 @@ def query_events(by_date: bool):
     agg = {}
     for r in client.run_report(req).rows:
         d = r.dimension_values
-        i = 0
-        ymd = ""
-        if by_date:
-            ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
-            i = 1
-        ev = d[i].value.replace("hs_chat_", "")
-        var = variant_of(u_from(d[i + 1].value or ""))
-        key = (ymd, var, ev) if by_date else (var, ev)
-        cur = agg.setdefault(key, {"sessions": 0, "users": 0})
+        ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
+        scenario = d[1].value or "(not set)"
+        ev = d[2].value.replace("hs_chat_", "")
+        var = variant_of(u_from(d[3].value or ""))
+        cur = agg.setdefault((ymd, var, scenario, ev), {"sessions": 0, "users": 0})
         cur["sessions"] += int(r.metric_values[0].value)
         cur["users"] += int(r.metric_values[1].value)
     return agg
@@ -153,12 +149,14 @@ SPECS = [
 ]
 
 
-# ダッシュボードのファネル(表示名, variant_dailyのmetric名)。順序=既存ダッシュボード踏襲
+# ダッシュボードのファネル(表示名, variant_dailyのmetric名)。
+# ※formplusは性別/PW/郵便番号を個別イベントにせず他ステップに束ねて発火するため、
+#   個別行(step_sex/password/zip)は置かず束ねた表示にする(standard scenarioは別途)。
 FUNNEL = [
     ("LP流入", "landing"), ("ボット起動", "open"), ("名前", "step_name"),
-    ("生年月日", "step_birth"), ("性別", "step_sex"), ("パスワード", "step_password"),
-    ("郵便番号", "step_zip"), ("住所", "step_addr"), ("連絡先", "step_contact"),
-    ("支払い方法", "step_payment"), ("カード", "step_card"), ("確認画面", "summary_view"),
+    ("生年月日", "step_birth"), ("連絡先(メール/PW)", "step_contact"),
+    ("住所(+郵便番号)", "step_addr"), ("支払い方法", "step_payment"),
+    ("カード情報", "step_card"), ("確認画面", "summary_view"),
     ("自動送信", "auto_submit"), ("CV(購入)", "purchase"),
 ]
 
@@ -172,59 +170,66 @@ def ensure_dashboard(sh, existing):
         return
     today = datetime.now(timezone(timedelta(hours=9))).date()
     start = (today - timedelta(days=14)).isoformat()
-    D = "variant_daily"  # 参照先
-    A, Bc = f"{D}!$A$2:$A$5000", f"{D}!$B$2:$B$5000"
-    Cc, Dc = f"{D}!$C$2:$C$5000", f"{D}!$D$2:$D$5000"
+    D = "variant_daily"  # 参照先。列: A=date B=variant C=scenario D=metric E=sessions
+    Ad, Bd = f"{D}!$A$2:$A$5000", f"{D}!$B$2:$B$5000"
+    Cd, Dd, Ed = f"{D}!$C$2:$C$5000", f"{D}!$D$2:$D$5000", f"{D}!$E$2:$E$5000"
+    # 制御セル: B1=開始 D1=終了 / B2=バリアント / B3=シナリオ。ヘッダ=5行目、ファネル=6行目〜
     vals = [
-        ["期間", start, "〜", today.isoformat()],
-        ["バリアント", "ins29", "", ""],
-        ["", "", "", ""],
-        ["ステップ", "到達(sess)", "通過率", "離脱率", "", "metric"],
+        ["期間", start, "〜", today.isoformat(), "", ""],
+        ["バリアント", "ins29", "", "", "", ""],
+        ["シナリオ", "formplus", "", "", "", ""],
+        ["", "", "", "", "", ""],
+        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動", "", "metric"],
     ]
+    period = f'({Ad}>=TEXT($B$1,"yyyy-mm-dd"))*({Ad}<=TEXT($D$1,"yyyy-mm-dd"))*({Bd}=$B$2)'
+    # 率は固定基準(÷LP流入=$B$6 / ÷ボット起動=$B$7)。直前比だと修正機能の再発火で崩れるため。
     n = len(FUNNEL)
     for j, (label, metric) in enumerate(FUNNEL):
-        r = 5 + j
-        reach = (f'=IFERROR(SUMPRODUCT(({A}>=TEXT($B$1,"yyyy-mm-dd"))*({A}<=TEXT($D$1,"yyyy-mm-dd"))'
-                 f'*({Bc}=$B$2)*({Cc}=$F{r})*{Dc}),0)')
-        if j == 0:
-            rate = "=IF($B5>0,1,\"\")"
-        else:
-            rng = f"$B$5:$B{r-1}"
-            rate = f'=IFERROR($B{r}/LOOKUP(2,ARRAYFORMULA(1/({rng}>0)),{rng}),"")'
-        drop = f'=IF($C{r}="","",1-$C{r})'
-        vals.append([label, reach, rate, drop, "", metric])
+        r = 6 + j
+        is_lp = metric in ("landing", "purchase")  # LP系はシナリオ非依存、botステップはB3で絞る
+        scen = "" if is_lp else f"*({Cd}=$B$3)"
+        reach = f'=IFERROR(SUMPRODUCT({period}{scen}*({Dd}=$F{r})*{Ed}),0)'
+        cover_lp = f'=IFERROR($B{r}/$B$6,"")'                       # 対LP流入(=起動率/LP CVRもここ)
+        cover_open = "" if metric == "landing" else f'=IFERROR($B{r}/$B$7,"")'  # 対ボット起動
+        vals.append([label, reach, cover_lp, cover_open, "", metric])
 
-    ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 8), cols=6)
+    ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 10), cols=6)
     ws.update(vals, "A1", value_input_option="USER_ENTERED")
-    last = 4 + n
-    ws.format(f"C5:D{last}", {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}})
-    ws.format("A1:A2", {"textFormat": {"bold": True}})
-    ws.format("A4:F4", {"textFormat": {"bold": True}})
-    # B2にバリアントのプルダウン(失敗しても本体は動く)
+    first, last = 6, 5 + n
+    ws.format(f"C{first}:D{last}", {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}})
+    ws.format("A1:A3", {"textFormat": {"bold": True}})
+    ws.format("A5:F5", {"textFormat": {"bold": True}})
+    # B2=バリアント / B3=シナリオ のプルダウン(失敗しても本体は動く)
     try:
-        sh.batch_update({"requests": [{"setDataValidation": {
-            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2,
-                      "startColumnIndex": 1, "endColumnIndex": 2},
-            "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
-                {"userEnteredValue": v} for v in ["fo", "ins29", "in29", "as29"]]},
-                "showCustomUi": True, "strict": False}}}]})
+        def dv(row0, opts):
+            return {"setDataValidation": {
+                "range": {"sheetId": ws.id, "startRowIndex": row0, "endRowIndex": row0 + 1,
+                          "startColumnIndex": 1, "endColumnIndex": 2},
+                "rule": {"condition": {"type": "ONE_OF_LIST",
+                    "values": [{"userEnteredValue": v} for v in opts]},
+                    "showCustomUi": True, "strict": False}}}
+        sh.batch_update({"requests": [
+            dv(1, ["fo", "ins29", "in29", "as29"]),
+            dv(2, ["formplus", "standard", "(not set)"]),
+        ]})
     except Exception as e:
         print(f"  (プルダウン設定skip: {e})")
-    print("variant_dashboard: 作成(期間/バリアント切替式)")
+    print("variant_dashboard: 作成(期間/バリアント/シナリオ切替式)")
 
 
 def main():
     # tidy(日次): date × variant × metric。landing + botステップ(hs_chat_*) + purchase
     land_d = query("landingPagePlusQueryString", LANDING_FILTER, by_date=True)
     pur_d = query("pagePathPlusQueryString", eq("eventName", "purchase"), by_date=True)
-    ev_d = query_events(by_date=True)
-    tidy = [["date", "variant", "metric", "sessions", "users"]]
+    ev_d = query_events()
+    # scenario列: LP系(landing/purchase)は "(lp)"、botステップは hs_scenario
+    tidy = [["date", "variant", "scenario", "metric", "sessions", "users"]]
     for (ymd, var), v in sorted(land_d.items()):
-        tidy.append([ymd, var, "landing", v["sessions"], v["users"]])
-    for (ymd, var, ev), v in sorted(ev_d.items()):
-        tidy.append([ymd, var, ev, v["sessions"], v["users"]])
+        tidy.append([ymd, var, "(lp)", "landing", v["sessions"], v["users"]])
+    for (ymd, var, scenario, ev), v in sorted(ev_d.items()):
+        tidy.append([ymd, var, scenario, ev, v["sessions"], v["users"]])
     for (ymd, var), v in sorted(pur_d.items()):
-        tidy.append([ymd, var, "purchase", v["sessions"], v["users"]])
+        tidy.append([ymd, var, "(lp)", "purchase", v["sessions"], v["users"]])
     # 稼働期間(landing着地の初回/最終日)= 同時期比較の判断材料(Codex指摘③)
     span = {}
     for (ymd, var) in land_d:
