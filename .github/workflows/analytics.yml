@@ -31,3 +31,8 @@ jobs:
         env:
           GA4_PROPERTY_ID: ${{ vars.GA4_PROPERTY_ID }}
           SHEET_ID: ${{ vars.SHEET_ID }}
+      - name: バリアント別サマリ(新タブ variant_*)
+        run: python analytics/pull_variants.py 60
+        env:
+          GA4_PROPERTY_ID: ${{ vars.GA4_PROPERTY_ID }}
+          SHEET_ID: ${{ vars.SHEET_ID }}
