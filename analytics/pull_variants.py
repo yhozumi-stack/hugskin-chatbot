@@ -193,7 +193,7 @@ def ensure_dashboard(sh, existing):
         ["バリアント", "ins29", "", "", "", ""],
         ["シナリオ", "formplus", "", "", "", ""],
         ["", "", "", "", "", ""],
-        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動(起動後)", "直前比較", "metric"],
+        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動(起動後)", "直前比較(参考)", "metric"],
     ]
     period = f'({Ad}>=TEXT($B$1,"yyyy-mm-dd"))*({Ad}<=TEXT($D$1,"yyyy-mm-dd"))*({Bd}=$B$2)'
     n = len(FUNNEL)
@@ -212,8 +212,10 @@ def ensure_dashboard(sh, existing):
         # bot内は一本道なので有効(LP側は自動起動/CTA起動で経路が分岐するので出さない)。DIV/0はIFERRORで空に
         prev = f'=IFERROR($B{r}/$B{r-1},"")' if r > open_row else ""
         vals.append([label, reach, cover_lp, cover_open, prev, metric])
-    # E列(直前比較)の但し書き。ファネル最終行(=5+n)の1つ下に置く
-    vals.append(["", "", "", "", "※直前比が100%超=1問ずつ修正(✎)の再発火", ""])
+    # E列(直前比較)の但し書き。ファネル最終行(=5+n)の1つ下に置く。
+    # ※sessions基準では"修正の再発火"は二重計上されない(同一セッション内は1)。100%超の主因は
+    #   小N＋確認画面からの部分修正でセッションが分裂すること。母数が増えると収束(=参考値)。
+    vals.append(["", "", "", "", "※参考値。小N＋確認画面での部分修正で100%超が出る(母数増で収束)", ""])
 
     ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 10), cols=6)
     ws.update(vals, "A1", value_input_option="USER_ENTERED")
