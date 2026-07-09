@@ -1,2 +1,4 @@
 .DS_Store
 analytics/service_account.json
+__pycache__/
+*.pyc

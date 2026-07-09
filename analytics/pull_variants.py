@@ -11,7 +11,8 @@
 - tidy(縦持ち)の variant_daily を残す(将来Tableauに繋げやすい)
 
 env: GA4_PROPERTY_ID / SHEET_ID / SA_KEY_PATH(省略時 analytics/service_account.json)
-使い方: python3 pull_variants.py [window_days=60] [--dry]  (--dry はシート書込せず表示のみ)
+使い方: python3 pull_variants.py [window_days=60] [--dry] [--reset-dashboard]
+  --dry: シート書込せず表示のみ / --reset-dashboard: variant_dashboardタブを削除→再作成
 """
 import os
 import sys
@@ -31,6 +32,7 @@ SHEET_ID = os.environ.get("SHEET_ID", "1alEw24pSXbbjtwM5RBl8cCXu77ZLHTHJsTsEO70b
 KEY = os.environ.get("SA_KEY_PATH", os.path.join(os.path.dirname(__file__), "service_account.json"))
 WINDOW = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 60
 DRY = "--dry" in sys.argv
+RESET_DASH = "--reset-dashboard" in sys.argv
 
 SCOPES = ["https://www.googleapis.com/auth/analytics.readonly",
           "https://www.googleapis.com/auth/spreadsheets"]
@@ -44,6 +46,12 @@ MASTER_SEED = [
     ["ins29", "自社bot 自動起動", "自社",     "自動", "bot",     "テスト中"],
     ["in29",  "自社bot CTA起動",  "自社",     "CTA",  "bot",     "テスト中"],
     ["as29",  "アスニカbot",     "アスニカ",  "CTA",  "bot",     "停止"],
+    ["as19",  "アスニカ旧",      "アスニカ",  "CTA",  "bot",     "停止"],
+    ["lp1",   "LP1(価格テスト)", "なし",     "-",  "control", "停止"],
+    ["lp2",   "LP2(価格テスト)", "なし",     "-",  "control", "停止"],
+    ["lp3",   "LP3(価格テスト)", "なし",     "-",  "control", "停止"],
+    ["INH",   "INH",            "なし",     "-",  "other",   "停止"],
+    ["thanks","サンクスページ",   "なし",     "-",  "other",   "対象外"],
 ]
 
 
@@ -143,9 +151,11 @@ def query_events():
 LANDING_FILTER = FilterExpression(filter=Filter(field_name="landingPagePlusQueryString",
     string_filter=Filter.StringFilter(match_type=Filter.StringFilter.MatchType.FULL_REGEXP, value=r"^/lp(\?.*)?$")))
 SPECS = [
-    ("landing",  "landingPagePlusQueryString", LANDING_FILTER),
-    ("bot_open", "customEvent:hs_page",        eq("eventName", "hs_chat_open")),
-    ("purchase", "pagePathPlusQueryString",    eq("eventName", "purchase")),
+    ("landing",   "landingPagePlusQueryString", LANDING_FILTER),
+    ("bot_open",  "customEvent:hs_page",        eq("eventName", "hs_chat_open")),
+    ("purchase",  "pagePathPlusQueryString",    eq("eventName", "purchase")),
+    ("form_view", "pagePathPlusQueryString",    eq("eventName", "form_view")),
+    ("cta_click", "pagePathPlusQueryString",    eq("eventName", "cta_click")),
 ]
 
 
@@ -153,9 +163,10 @@ SPECS = [
 # ※formplusは性別/PW/郵便番号を個別イベントにせず他ステップに束ねて発火するため、
 #   個別行(step_sex/password/zip)は置かず束ねた表示にする(standard scenarioは別途)。
 FUNNEL = [
-    ("LP流入", "landing"), ("ボット起動", "open"), ("名前", "step_name"),
-    ("生年月日", "step_birth"), ("連絡先(メール/PW)", "step_contact"),
-    ("住所(+郵便番号)", "step_addr"), ("支払い方法", "step_payment"),
+    ("LP流入", "landing"), ("フォーム表示", "form_view"), ("CTA押下", "cta_click"),
+    ("ボット起動", "open"), ("名前", "step_name"),
+    ("生年月日(+性別)", "step_birth"), ("住所(郵便番号/電話番号)", "step_addr"),
+    ("連絡先(メール/PW)", "step_contact"), ("支払い方法", "step_payment"),
     ("カード情報", "step_card"), ("確認画面", "summary_view"),
     ("自動送信", "auto_submit"), ("CV(購入)", "purchase"),
 ]
@@ -165,9 +176,12 @@ def ensure_dashboard(sh, existing):
     """variant_dashboard タブを作る(無ければ)。期間/バリアントをセルで切替、
     variant_daily から SUMPRODUCT で集計する数式(=日付/バリアントを変えると即再計算)。
     既に有れば触らない(ユーザーの選択セルを保持)。"""
-    if "variant_dashboard" in existing:
-        print("variant_dashboard: 既存につき保持")
+    if "variant_dashboard" in existing and not RESET_DASH:
+        print("variant_dashboard: 既存につき保持(--reset-dashboard で再作成)")
         return
+    if "variant_dashboard" in existing:
+        sh.del_worksheet(sh.worksheet("variant_dashboard"))
+        print("variant_dashboard: 削除→再作成")
     today = datetime.now(timezone(timedelta(hours=9))).date()
     start = (today - timedelta(days=14)).isoformat()
     D = "variant_daily"  # 参照先。列: A=date B=variant C=scenario D=metric E=sessions
@@ -179,18 +193,21 @@ def ensure_dashboard(sh, existing):
         ["バリアント", "ins29", "", "", "", ""],
         ["シナリオ", "formplus", "", "", "", ""],
         ["", "", "", "", "", ""],
-        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動", "", "metric"],
+        ["ステップ", "到達(sess)", "対LP流入", "対ボット起動(起動後)", "", "metric"],
     ]
     period = f'({Ad}>=TEXT($B$1,"yyyy-mm-dd"))*({Ad}<=TEXT($D$1,"yyyy-mm-dd"))*({Bd}=$B$2)'
-    # 率は固定基準(÷LP流入=$B$6 / ÷ボット起動=$B$7)。直前比だと修正機能の再発火で崩れるため。
     n = len(FUNNEL)
+    open_row = 6 + next(j for j, (_, m) in enumerate(FUNNEL) if m == "open")
+    # 率は固定基準(÷LP流入=$B$6 / ÷ボット起動=$B${open_row})。直前比だと修正機能の再発火で崩れるため。
     for j, (label, metric) in enumerate(FUNNEL):
         r = 6 + j
-        is_lp = metric in ("landing", "purchase")  # LP系はシナリオ非依存、botステップはB3で絞る
+        is_lp = metric in ("landing", "purchase", "form_view", "cta_click")
         scen = "" if is_lp else f"*({Cd}=$B$3)"
         reach = f'=IFERROR(SUMPRODUCT({period}{scen}*({Dd}=$F{r})*{Ed}),0)'
-        cover_lp = f'=IFERROR($B{r}/$B$6,"")'                       # 対LP流入(=起動率/LP CVRもここ)
-        cover_open = "" if metric == "landing" else f'=IFERROR($B{r}/$B$7,"")'  # 対ボット起動
+        cover_lp = f'=IFERROR($B{r}/$B$6,"")'
+        # 「対ボット起動」はボット起動以降の行だけ。LP流入/フォーム表示/CTA押下はbot起動より"前"の
+        # LPイベントなので分母(ボット起動)にできない→空欄(bot起動列で見ると誤読になる。Codex指摘)
+        cover_open = f'=IFERROR($B{r}/$B${open_row},"")' if r >= open_row else ""
         vals.append([label, reach, cover_lp, cover_open, "", metric])
 
     ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 10), cols=6)
@@ -218,14 +235,20 @@ def ensure_dashboard(sh, existing):
 
 
 def main():
-    # tidy(日次): date × variant × metric。landing + botステップ(hs_chat_*) + purchase
+    # tidy(日次): date × variant × metric。landing + GTMイベント + botステップ(hs_chat_*) + purchase
     land_d = query("landingPagePlusQueryString", LANDING_FILTER, by_date=True)
     pur_d = query("pagePathPlusQueryString", eq("eventName", "purchase"), by_date=True)
+    fv_d = query("pagePathPlusQueryString", eq("eventName", "form_view"), by_date=True)
+    cta_d = query("pagePathPlusQueryString", eq("eventName", "cta_click"), by_date=True)
     ev_d = query_events()
-    # scenario列: LP系(landing/purchase)は "(lp)"、botステップは hs_scenario
+    # scenario列: LP系(landing/purchase/form_view/cta_click)は "(lp)"、botステップは hs_scenario
     tidy = [["date", "variant", "scenario", "metric", "sessions", "users"]]
     for (ymd, var), v in sorted(land_d.items()):
         tidy.append([ymd, var, "(lp)", "landing", v["sessions"], v["users"]])
+    for (ymd, var), v in sorted(fv_d.items()):
+        tidy.append([ymd, var, "(lp)", "form_view", v["sessions"], v["users"]])
+    for (ymd, var), v in sorted(cta_d.items()):
+        tidy.append([ymd, var, "(lp)", "cta_click", v["sessions"], v["users"]])
     for (ymd, var, scenario, ev), v in sorted(ev_d.items()):
         tidy.append([ymd, var, scenario, ev, v["sessions"], v["users"]])
     for (ymd, var), v in sorted(pur_d.items()):
@@ -280,13 +303,20 @@ def main():
     sh = gc.open_by_key(SHEET_ID)
     existing = {ws.title for ws in sh.worksheets()}
 
-    # variant_master: 無ければ作ってseed。あれば触らない(ユーザー編集尊重)
+    # variant_master: 無ければ作ってseed。あれば未登録コードだけ追記(ユーザー編集尊重)
     if "variant_master" not in existing:
         ws = sh.add_worksheet("variant_master", rows=50, cols=len(MASTER_HEADER))
         ws.update([MASTER_HEADER] + MASTER_SEED, "A1")
         print("variant_master: 作成+初期値")
     else:
-        print("variant_master: 既存につき保持")
+        ws = sh.worksheet("variant_master")
+        existing_codes = {r[0] for r in ws.get_all_values()[1:] if r and r[0]}
+        new_rows = [r for r in MASTER_SEED if r[0] not in existing_codes]
+        if new_rows:
+            ws.append_rows(new_rows, value_input_option="RAW")
+            print(f"variant_master: {len(new_rows)} 件追記 ({', '.join(r[0] for r in new_rows)})")
+        else:
+            print("variant_master: 既存につき保持")
 
     for title, values in [("variant_daily", tidy), ("variant_summary", summary)]:
         if title in existing:
