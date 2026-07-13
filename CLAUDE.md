@@ -402,6 +402,21 @@ python3 -m http.server 8940
 `hs_chat_open`(立ち上がり) / `hs_chat_step_名前`(各ステップ完了) / `hs_chat_summary_view`(確認画面) / `hs_chat_submit`(転記) / `hs_chat_close`
 → ボットの立ち上がり率・ステップ離脱はClarityでこのイベントをフィルタして見る。
 
+### hs_page(LP判定)の仕組み(v3.25.0〜・2026-07-13の事故対応で確立。壊れた時はここを読む)
+- **チャット/ポップアップが送る `hs_page` は素のURLではなく「パス+u=広告コード」の短い正規形**(例 `/lp?u=ins29_…`)。
+  GA4カスタムディメンションは**値が100文字で切られる**ため、記事経由でab=/af=/fbclid=がu=の前に付く長いURLだとu=が消し飛ぶ(2026-07-10〜12に実際に起きて全チャットイベントがバリアント不明になった)
+- u=は一度取れたら `sessionStorage['hs_u']` に保持し、u=が無い後続ページ(確認画面/エラー戻り)でも使い続ける
+- **集計側(pull_ga4.py / pull_variants.py)は多段フォールバック**: ①hs_page正規形 → ②標準ディメンションの実URL(pagePathPlusQueryString・切られない) → ③ab=(Squad beyondのABコード。u=が完全に消えてもゼロにはしない)
+- それでも壊れたら `sanity_guards`(pull_variants.py)が検知してworkflowを失敗させ、Slackに通知が飛ぶ:
+  - 「(no_u)が過半」→ LPの実URLをGA4で見てu=/ab=がどこに行ったか確認(このセクションの手口を再利用)
+  - 「チャットイベント0件」→ GTMタグ停止の疑い。GA4リアルタイム+スマホ実機でhs_chat_openが出るか確認
+- 通知の疎通テスト: `gh workflow run analytics.yml -f backfill_days=TEST`(わざと失敗させる・シート無傷)
+
+### cta_click / form_view / bot_open はチャットではなくGTM側のトリガー(GTM-TRRF8FDN)
+- `cta_click` = `a[href="#lp-form"]` のクリック(**2026-07-13にセレクタ拡大。それ以前は本文CTA(a.lp1-cv-btn)限定で追従バナーが未計測=過小**。日付またぎ比較禁止)
+- `form_view` = 注文フォーム要素の画面表示(スクロール到達もカウント) / `bot_open` = 旧form-plus/アスニカbotのボタン(`[id^="fp_chat_"]`)
+- CTA起動LP(in29)の「CTA押下」は cta_click ではなく **hs_chat_open で読む**(CTA押下=チャット起動のため)
+
 ## 離脱分析ダッシュボード(2026-07-06稼働開始)
 
 データの流れ: **チャット(dataLayer) → GTM(GTM-TRRF8FDN) → GA4 → GitHub Actions(毎朝5時JST) → スプレッドシート**
