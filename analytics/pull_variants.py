@@ -240,6 +240,9 @@ def ensure_dashboard(sh, existing):
     # ※sessions基準では"修正の再発火"は二重計上されない(同一セッション内は1)。100%超の主因は
     #   小N＋確認画面からの部分修正でセッションが分裂すること。母数が増えると収束(=参考値)。
     vals.append(["", "", "", "", "※参考値。小N＋確認画面での部分修正で100%超が出る(母数増で収束)", ""])
+    # cta_clickの計測範囲はGTM修正(2026-07-13公開)で拡大した。それ以前は追従バナー
+    # (fixBanner-btn)のクリックが未計測=過小なので、7/13をまたぐ期間比較は不可
+    vals.append(["※CTA押下(cta_click)は2026-07-13にGTMトリガーを修正(それ以前は追従バナーのクリックが未計測=過小)。7/13をまたぐ期間比較は注意", "", "", "", "", ""])
 
     ws = sh.add_worksheet("variant_dashboard", rows=max(30, n + 10), cols=6)
     ws.update(vals, "A1", value_input_option="USER_ENTERED")
