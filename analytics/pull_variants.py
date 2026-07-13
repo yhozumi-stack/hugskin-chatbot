@@ -70,6 +70,24 @@ def u_from(url: str) -> str:
         return ""
 
 
+def u_from_any(*urls) -> str:
+    """複数のURL候補からu=を探す(壊れにくい多段フォールバック 2026-07-13)。
+    ①どれかのu=(hs_page正規形/実URLの順) ②u=が全滅ならab=(Squad beyondの
+    AB振り分けコード。in/insの区別は無いが施策単位の集計は残る=ゼロにしない)"""
+    for url in urls:
+        u = u_from(url)
+        if u:
+            return u
+    for url in urls:
+        try:
+            ab = (parse_qs(urlparse(url).query).get("ab") or [""])[0]
+        except Exception:
+            ab = ""
+        if ab:
+            return ab
+    return ""
+
+
 def load_master() -> dict:
     """variant_master(code->(名前,状態))を読む。無ければseedを使う。"""
     seed = {row[0]: (row[1], row[5]) for row in MASTER_SEED}
@@ -91,11 +109,14 @@ def AND(*fs):
     return FilterExpression(and_group=FilterExpressionList(expressions=list(fs)))
 
 
-def query(url_dim: str, event_filter, by_date: bool):
-    """url_dim(URL/hs_page) で sessions,totalUsers を取り variant別に集約。
+def query(url_dims, event_filter, by_date: bool):
+    """url_dims(URL系ディメンション名 or そのリスト)で sessions,totalUsers を取り variant別に集約。
+    複数指定時はどれかからu=が取れればOK(hs_page正規形×実URLの多段フォールバック)。
     by_date=True: (date, variant)別(日次tidy用) / False: variant別(期間合計=usersを正しく重複除去)。
     ※usersは日跨ぎで重複するので、期間合計は必ず by_date=False で引く(日次の足し算はNG)。"""
-    dims = ([Dimension(name="date")] if by_date else []) + [Dimension(name=url_dim)]
+    if isinstance(url_dims, str):
+        url_dims = [url_dims]
+    dims = ([Dimension(name="date")] if by_date else []) + [Dimension(name=d) for d in url_dims]
     req = RunReportRequest(
         property=f"properties/{PID}",
         date_ranges=[DateRange(start_date=f"{WINDOW}daysAgo", end_date="today")],
@@ -105,14 +126,14 @@ def query(url_dim: str, event_filter, by_date: bool):
         limit=100000,
     )
     agg = {}
+    off = 1 if by_date else 0
     for r in client.run_report(req).rows:
         d = r.dimension_values
+        var = variant_of(u_from_any(*[d[off + i].value or "" for i in range(len(url_dims))]))
         if by_date:
             ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
-            var = variant_of(u_from(d[1].value or ""))
             key = (ymd, var)
         else:
-            var = variant_of(u_from(d[0].value or ""))
             key = var
         cur = agg.setdefault(key, {"sessions": 0, "users": 0})
         cur["sessions"] += int(r.metric_values[0].value)
@@ -123,13 +144,14 @@ def query(url_dim: str, event_filter, by_date: bool):
 def query_events():
     """hs_chat_* を date×variant×scenario×event別に集計(botステップ用・variant_daily行)。
     metric=イベント名(prefix除去)。scenario別に持つ(=formplus/standardの混在を後で切り分け可)。
-    ※URLはhs_page(カスタムディメンション=100文字切りでクエリ末尾のu=が落ちる)ではなく
-      標準ディメンションで取る(2026-07-13修正。記事経由でab=/af=/fbclid=がu=の前に入るため)"""
+    ※URLは hs_page(v3.25.0からチャット側が「パス+u=」の短い正規形を送る=第一候補)と
+      標準ディメンションの実URL(旧データ・保険=第二候補)の両方から引く(2026-07-13)"""
     req = RunReportRequest(
         property=f"properties/{PID}",
         date_ranges=[DateRange(start_date=f"{WINDOW}daysAgo", end_date="today")],
         dimensions=[Dimension(name="date"), Dimension(name="customEvent:hs_scenario"),
-                    Dimension(name="eventName"), Dimension(name="pagePathPlusQueryString")],
+                    Dimension(name="eventName"), Dimension(name="customEvent:hs_page"),
+                    Dimension(name="pagePathPlusQueryString")],
         metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
         dimension_filter=FilterExpression(filter=Filter(field_name="eventName",
             string_filter=Filter.StringFilter(
@@ -142,7 +164,7 @@ def query_events():
         ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
         scenario = d[1].value or "(not set)"
         ev = d[2].value.replace("hs_chat_", "")
-        var = variant_of(u_from(d[3].value or ""))
+        var = variant_of(u_from_any(d[3].value or "", d[4].value or ""))
         cur = agg.setdefault((ymd, var, scenario, ev), {"sessions": 0, "users": 0})
         cur["sessions"] += int(r.metric_values[0].value)
         cur["users"] += int(r.metric_values[1].value)
@@ -154,7 +176,7 @@ LANDING_FILTER = FilterExpression(filter=Filter(field_name="landingPagePlusQuery
     string_filter=Filter.StringFilter(match_type=Filter.StringFilter.MatchType.FULL_REGEXP, value=r"^/lp(\?.*)?$")))
 SPECS = [
     ("landing",   "landingPagePlusQueryString", LANDING_FILTER),
-    ("bot_open",  "pagePathPlusQueryString",    eq("eventName", "hs_chat_open")),
+    ("bot_open",  ["customEvent:hs_page", "pagePathPlusQueryString"], eq("eventName", "hs_chat_open")),
     ("purchase",  "pagePathPlusQueryString",    eq("eventName", "purchase")),
     ("form_view", "pagePathPlusQueryString",    eq("eventName", "form_view")),
     ("cta_click", "pagePathPlusQueryString",    eq("eventName", "cta_click")),

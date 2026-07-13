@@ -1,5 +1,7 @@
 /*! ============================================================
-    LP離脱ポップアップ popup.js v1.2.0
+    LP離脱ポップアップ popup.js v1.3.0
+    (v1.3.0: 計測のhs_pageを「パス+u=広告コード」の短い正規形に変更。
+     GA4の100文字切りでu=が落ちる問題の根本対応。chatbot.js v3.25.0と同方式)
     (v1.2.0: 画像モードの独立CTAに画像ボタン(ctaImage)を指定可能に)
     (v1.1.1: 表示時の画像読み込み失敗にも onerror フォールバックを追加)
     (v1.1.0: 画像URLが404等で読めない時はテキストモードに自動フォールバック
@@ -124,13 +126,28 @@ var CFG = {};
    イベント名は hs_chat_popup_show / hs_chat_popup_cta / hs_chat_popup_close。
    hs_chat_ 前方一致なので GTM・GA4・シート集計に設定変更なしで乗る。
    シート側では event = popup_show / popup_cta / popup_close の行になる */
+/* hs_page はGA4カスタムディメンション経由で100文字に切られるため、素のURL全文
+   ではなく「パス + u=広告コード」の短い正規形を送る(v1.3.0・chatbot.jsと同じ方式)。
+   sessionStorageのキー(hs_u)も共有=どちらが先に読まれても同じu=を使う */
+function trackPage() {
+  var u = '';
+  try { u = new URLSearchParams(location.search).get('u') || ''; } catch (e) {}
+  try {
+    if (u) sessionStorage.setItem('hs_u', u);
+    else u = sessionStorage.getItem('hs_u') || '';
+  } catch (e) {}
+  return u ? location.pathname + '?u=' + u
+           : (location.pathname + location.search).slice(0, 96);
+}
+trackPage();   // 読込時点でu=を確保
+
 function track(ev, trig) {
   try {
     if (window.dataLayer) window.dataLayer.push({
       event: 'hs_chat_' + ev,
       hs_event: ev,
       hs_scenario: (window.HS_CHAT && window.HS_CHAT.scenario) || '(popup)',
-      hs_page: location.pathname + location.search,
+      hs_page: trackPage(),
       hs_popup_trigger: trig || '',
     });
   } catch (e) {}

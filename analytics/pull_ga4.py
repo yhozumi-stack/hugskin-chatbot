@@ -24,15 +24,28 @@ creds = service_account.Credentials.from_service_account_file(
     scopes=["https://www.googleapis.com/auth/analytics.readonly",
             "https://www.googleapis.com/auth/spreadsheets"])
 
-def normalize_lp(page):
-    """パス+クエリから広告コード(u=)を抽出してLP名にする。
-    ※u=はクエリ末尾に付くことがある(記事経由でab=/af=/fbclid=が前に入る)ため、
-      100文字で切られるカスタムディメンション(hs_page)ではなく
-      標準ディメンション(pagePathPlusQueryString)の値を渡すこと(2026-07-13修正)"""
+def normalize_lp(page, *alts):
+    """パス+クエリから広告コード(u=)を抽出してLP名にする。多段フォールバック(2026-07-13):
+    ①page/alts のどれかの u=(hs_page はv3.25.0から「パス+u=」の短い正規形。
+      旧データや保険として標準ディメンションの実URLも渡す)
+    ②u=が全滅なら ab=(Squad beyondのAB振り分けコード。集計をゼロにしないため)
+    ③どちらも無ければパス"""
+    cands = [page] + list(alts)
+    for c in cands:
+        try:
+            q = parse_qs(urlparse(c).query)
+            if q.get("u"):
+                return "u=" + q["u"][0]
+        except Exception:
+            pass
+    for c in cands:
+        try:
+            q = parse_qs(urlparse(c).query)
+            if q.get("ab"):
+                return "ab=" + q["ab"][0]
+        except Exception:
+            pass
     try:
-        q = parse_qs(urlparse(page).query)
-        if q.get("u"):
-            return "u=" + q["u"][0]
         return urlparse(page).path or page
     except Exception:
         return page
@@ -43,7 +56,8 @@ def fetch(start, end):
         property=f"properties/{PROPERTY_ID}",
         date_ranges=[DateRange(start_date=start, end_date=end)],
         dimensions=[Dimension(name="date"), Dimension(name="eventName"),
-                    Dimension(name="customEvent:hs_scenario"), Dimension(name="pagePathPlusQueryString")],
+                    Dimension(name="customEvent:hs_scenario"), Dimension(name="customEvent:hs_page"),
+                    Dimension(name="pagePathPlusQueryString")],
         metrics=[Metric(name="eventCount"), Metric(name="totalUsers")],
         dimension_filter=FilterExpression(filter=Filter(
             field_name="eventName",
@@ -57,7 +71,7 @@ def fetch(start, end):
         ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
         event = d[1].value.replace("hs_chat_", "", 1)
         scenario = d[2].value or "(not set)"
-        lp = normalize_lp(d[3].value or "")
+        lp = normalize_lp(d[3].value or "", d[4].value or "")
         out.append([ymd, lp, scenario, event, int(r.metric_values[0].value), int(r.metric_values[1].value)])
     return out
 

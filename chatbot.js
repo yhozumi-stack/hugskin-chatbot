@@ -1,5 +1,9 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.23.0
+    HugSkin 獲得チャットボット v3.25.0
+    (v3.25.0: 計測のhs_pageを「パス+u=広告コード」の短い正規形に変更。
+     GA4カスタムディメンションの100文字切りで、記事経由の長いURL(ab=/af=/
+     fbclid=がu=の前に付く)からu=が落ちて集計不能になる問題の根本対応。
+     u=は一度取れたらsessionStorageに保持し、後続ページでも使う)
     (v3.23.0: ×押下時の閉じ確認ダイアログ closeConfirm を追加。
      既定OFF=タグで設定したLPだけ有効。詳細はDEFAULTSのコメント)
     ------------------------------------------------------------
@@ -383,13 +387,30 @@ var VALIDATORS = {
    ステップ名・シナリオ名・LP(ページ+広告URL)をパラメータで送る。
    GTM側で「hs_chat_ で始まるイベントをGA4に転送」する設定を1回すれば
    GA4で 期間×LP×シナリオ×ステップ の絞り込み分析ができる */
+/* hs_page はGA4カスタムディメンション経由で100文字に切られるため、素のURL全文
+   ではなく「パス + u=広告コード」の短い正規形を送る(v3.25.0)。u= はクエリの
+   どの位置にあっても拾い、一度取れたら sessionStorage に保持して、u=が無い
+   後続ページ(確認画面/エラー戻り等)やURLが書き換えられた場合でも使い続ける。
+   u=がどこにも無いページは従来どおりパス+クエリ(96文字まで)を送る */
+function trackPage() {
+  var u = '';
+  try { u = new URLSearchParams(location.search).get('u') || ''; } catch (e) {}
+  try {
+    if (u) sessionStorage.setItem('hs_u', u);
+    else u = sessionStorage.getItem('hs_u') || '';
+  } catch (e) {}
+  return u ? location.pathname + '?u=' + u
+           : (location.pathname + location.search).slice(0, 96);
+}
+trackPage();   // 読込時点でu=を確保(後からURLが変わっても計測が壊れない)
+
 function track(ev) {
   try {
     if (window.dataLayer) window.dataLayer.push({
       event: 'hs_chat_' + ev,
       hs_event: ev,
       hs_scenario: CFG.scenario,
-      hs_page: location.pathname + location.search,
+      hs_page: trackPage(),
     });
   } catch (e) {}
   try { if (window.clarity) window.clarity('event', 'hs_chat_' + ev); } catch (e) {}
