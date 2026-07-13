@@ -268,6 +268,35 @@ def ensure_dashboard(sh, existing):
     print("variant_dashboard: 作成(期間/バリアント/シナリオ切替式)")
 
 
+def sanity_guards(tidy_rows):
+    """集計が「静かに」壊れた時にワークフローを失敗させる(通知はymlの if: failure() 側)。
+    ジョブ自体はsuccessのまま中身だけ死ぬパターン(2026-07-10のhs_page切り落とし等)への保険。
+    ⚠️ シート書込の「後」に呼ぶこと(データは残した上で大声で死ぬ)。
+    Guard A: 直近3日のチャットイベントのバリアント判定不能率((no_u))が50%超
+             → URL形式がまた変わってu=/ab=両方読めなくなった疑い
+    Guard B: 直近3日でLP流入が十分あるのにチャットイベントが1件も無い
+             → GTMタグ停止・GA4計測死の疑い"""
+    today = datetime.now(timezone(timedelta(hours=9))).date()   # JST固定(RunnerはUTC)
+    recent = {(today - timedelta(days=i)).isoformat() for i in range(3)}
+    chat = [r for r in tidy_rows[1:] if r[0] in recent and r[2] != "(lp)"]
+    chat_sessions = sum(int(r[4]) for r in chat)
+    no_u = sum(int(r[4]) for r in chat if r[1] == "(no_u)")
+    landing = sum(int(r[4]) for r in tidy_rows[1:] if r[0] in recent and r[3] == "landing")
+    errors = []
+    if chat_sessions >= 5 and no_u / chat_sessions > 0.5:
+        errors.append(f"バリアント判定不能((no_u))が直近3日で{no_u}/{chat_sessions}セッション(>50%)。"
+                      "LPのURL形式変化(u=/ab=両方消えた)やGA4ディメンション変更を疑う")
+    if chat_sessions == 0 and landing >= 30:
+        errors.append(f"直近3日: LP流入{landing}セッションに対しチャットイベント0件。"
+                      "GTMタグ停止/チャット計測の死を疑う(GA4リアルタイムで実機確認を)")
+    if errors:
+        for e in errors:
+            print(f"::error::🚨 GUARD: {e}")
+        print("(シートへの書込自体は完了済み。この失敗は検知目的)")
+        sys.exit(1)
+    print(f"guards OK (直近3日: chat {chat_sessions}s / (no_u) {no_u}s / landing {landing}s)")
+
+
 def main():
     # tidy(日次): date × variant × metric。landing + GTMイベント + botステップ(hs_chat_*) + purchase
     land_d = query("landingPagePlusQueryString", LANDING_FILTER, by_date=True)
@@ -363,6 +392,7 @@ def main():
 
     ensure_dashboard(sh, existing)
     print("完了(既存 data / ダッシュボード は未変更)")
+    sanity_guards(tidy)   # 書込完了後に実行(壊れていたらここでexit 1→Slack通知)
 
 
 if __name__ == "__main__":

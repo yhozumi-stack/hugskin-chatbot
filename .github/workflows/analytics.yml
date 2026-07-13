@@ -12,6 +12,10 @@ on:
         description: '遡って取り直す日数'
         default: '3'
 
+concurrency:
+  group: analytics
+  cancel-in-progress: false
+
 jobs:
   pull:
     runs-on: ubuntu-latest
@@ -36,3 +40,16 @@ jobs:
         env:
           GA4_PROPERTY_ID: ${{ vars.GA4_PROPERTY_ID }}
           SHEET_ID: ${{ vars.SHEET_ID }}
+      # 失敗時Slack通知(鉄則: 定期実行workflowには必ず付ける)。
+      # SLACK_WEBHOOK_URL secret 未設定の間はスキップ(GitHubのメール通知のみ)。
+      # 集計が「静かに」壊れた場合も pull_variants.py の sanity_guards が
+      # exit 1 するのでここに落ちてくる。
+      - name: 失敗をSlackへ通知
+        if: failure()
+        env:
+          WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "SLACK_WEBHOOK_URL未設定のため通知スキップ"; exit 0; fi
+          payload=$(printf '{"text":"🚨 HugSkinチャットボット分析の毎朝更新が失敗しました\n・ログ: %s\n・対応: ログの ::error:: 行を確認 → 直ったら gh workflow run analytics.yml -f backfill_days=7 で取り直し(CLAUDE.md レシピB)\n・シートが古いままでもLP/CVは無影響"}' "$RUN_URL")
+          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK"

@@ -37,3 +37,13 @@ jobs:
             [ "$code" = "200" ] || { echo "::error::img/${img} が配信されていません(HTTP ${code})"; exit 1; }
           done
           echo "OK: images serving"
+      # 失敗時Slack通知(メール通知に追加。SLACK_WEBHOOK_URL未設定の間はスキップ)
+      - name: 失敗をSlackへ通知
+        if: failure()
+        env:
+          WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "SLACK_WEBHOOK_URL未設定のため通知スキップ"; exit 0; fi
+          payload=$(printf '{"text":"🚨 chatbot.js/popup.js の配信ヘルスチェックが失敗しました(GitHub Pages配信異常の可能性)\n・ログ: %s\n・LPの通常フォームは無傷なのでCVは止まらないが、チャット経由CVが落ちる。UptimeRobot(5分間隔)の通知も確認を"}' "$RUN_URL")
+          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK"

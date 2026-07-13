@@ -468,7 +468,10 @@ gh workflow run analytics.yml -f backfill_days=14   # 14日さかのぼって取
 | 監視 | 間隔 | 通知先 | 実体 |
 |---|---|---|---|
 | UptimeRobot(外部) | 5分 | メール + Slack #hugskin_chatbot_alert | chatbot.js / popup.js の配信URL と hugskin.shop の3モニター(popup.jsは2026-07-08追加) |
-| healthcheck.yml(GitHub内) | 6時間 | GitHubからオーナーへメール | chatbot.js + popup.js の配信+中身+サイズを確認。GitHub自体の障害時はこちらも止まる点に注意 |
+| healthcheck.yml(GitHub内) | 6時間 | GitHubからオーナーへメール + 失敗時Slack | chatbot.js + popup.js の配信+中身+サイズを確認。GitHub自体の障害時はこちらも止まる点に注意 |
+| analytics.yml(集計・2026-07-13追加) | 毎朝5時 | 失敗時Slack(secret `SLACK_WEBHOOK_URL`) | ①実行失敗 ②**集計のサイレント破壊**を`sanity_guards`が検知して失敗させる: 直近3日の(no_u)率>50%(URL形式変化) / LP流入30s以上でチャットイベント0件(GTM死)。ガードはシート書込後に走る=データは残る |
+
+- **Slack通知のsecret**: `gh secret set SLACK_WEBHOOK_URL` で #hugskin_chatbot_alert 宛のIncoming Webhook URLを登録(発行手順=共通ナレッジ `slack_webhook_setup.md`)。**未設定の間は通知ステップが自動スキップ**(workflowは壊れない・メール通知のみ)
 
 - UptimeRobotアカウント: y.hozumi@triber.co.jp(**無料プラン**。ダッシュボード= https://dashboard.uptimerobot.com/monitors )
 - **⚠️無料プランの制約**: Slack/Webhook連携・通知先メールの追加(Team members)は全部有料限定。そのため**Slack通知はGmail転送フィルタで実現**している:
