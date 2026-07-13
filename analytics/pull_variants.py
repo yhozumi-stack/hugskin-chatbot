@@ -122,12 +122,14 @@ def query(url_dim: str, event_filter, by_date: bool):
 
 def query_events():
     """hs_chat_* を date×variant×scenario×event別に集計(botステップ用・variant_daily行)。
-    metric=イベント名(prefix除去)。scenario別に持つ(=formplus/standardの混在を後で切り分け可)。"""
+    metric=イベント名(prefix除去)。scenario別に持つ(=formplus/standardの混在を後で切り分け可)。
+    ※URLはhs_page(カスタムディメンション=100文字切りでクエリ末尾のu=が落ちる)ではなく
+      標準ディメンションで取る(2026-07-13修正。記事経由でab=/af=/fbclid=がu=の前に入るため)"""
     req = RunReportRequest(
         property=f"properties/{PID}",
         date_ranges=[DateRange(start_date=f"{WINDOW}daysAgo", end_date="today")],
         dimensions=[Dimension(name="date"), Dimension(name="customEvent:hs_scenario"),
-                    Dimension(name="eventName"), Dimension(name="customEvent:hs_page")],
+                    Dimension(name="eventName"), Dimension(name="pagePathPlusQueryString")],
         metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
         dimension_filter=FilterExpression(filter=Filter(field_name="eventName",
             string_filter=Filter.StringFilter(
@@ -152,7 +154,7 @@ LANDING_FILTER = FilterExpression(filter=Filter(field_name="landingPagePlusQuery
     string_filter=Filter.StringFilter(match_type=Filter.StringFilter.MatchType.FULL_REGEXP, value=r"^/lp(\?.*)?$")))
 SPECS = [
     ("landing",   "landingPagePlusQueryString", LANDING_FILTER),
-    ("bot_open",  "customEvent:hs_page",        eq("eventName", "hs_chat_open")),
+    ("bot_open",  "pagePathPlusQueryString",    eq("eventName", "hs_chat_open")),
     ("purchase",  "pagePathPlusQueryString",    eq("eventName", "purchase")),
     ("form_view", "pagePathPlusQueryString",    eq("eventName", "form_view")),
     ("cta_click", "pagePathPlusQueryString",    eq("eventName", "cta_click")),

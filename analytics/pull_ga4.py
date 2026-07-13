@@ -25,7 +25,10 @@ creds = service_account.Credentials.from_service_account_file(
             "https://www.googleapis.com/auth/spreadsheets"])
 
 def normalize_lp(page):
-    """hs_page(パス+クエリ)から広告コード(u=)を抽出してLP名にする"""
+    """パス+クエリから広告コード(u=)を抽出してLP名にする。
+    ※u=はクエリ末尾に付くことがある(記事経由でab=/af=/fbclid=が前に入る)ため、
+      100文字で切られるカスタムディメンション(hs_page)ではなく
+      標準ディメンション(pagePathPlusQueryString)の値を渡すこと(2026-07-13修正)"""
     try:
         q = parse_qs(urlparse(page).query)
         if q.get("u"):
@@ -40,7 +43,7 @@ def fetch(start, end):
         property=f"properties/{PROPERTY_ID}",
         date_ranges=[DateRange(start_date=start, end_date=end)],
         dimensions=[Dimension(name="date"), Dimension(name="eventName"),
-                    Dimension(name="customEvent:hs_scenario"), Dimension(name="customEvent:hs_page")],
+                    Dimension(name="customEvent:hs_scenario"), Dimension(name="pagePathPlusQueryString")],
         metrics=[Metric(name="eventCount"), Metric(name="totalUsers")],
         dimension_filter=FilterExpression(filter=Filter(
             field_name="eventName",
