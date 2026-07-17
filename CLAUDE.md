@@ -27,6 +27,7 @@ ecforce LP に埋め込む新規獲得用チャットボット。1ファイル(`
 | `chatbot.js` | 本体。①DEFAULTS ②SCENARIOS ③ENGINE の3部構成 | ①②は編集OK / **③ENGINEは編集注意** |
 | `popup.js` | **LP離脱ポップアップ**(チャットとは独立・別ファイル)。①DEFAULTS ②ENGINE | ①は編集OK / **②ENGINEは編集注意** |
 | `tags/ecforce_tag.html` | ecforceタグ管理に貼るタグの正本 | LP追加時に参照 |
+| `tags/タグ設定リファレンス.md` | **タグで制御できる全設定のON/OFFコード一覧**(チャット+ポップアップ) | タグ編集時に参照 |
 | `tags/ecforce_tag_popup.html` | 離脱ポップアップ用タグの正本 | ポップアップ設置時に参照 |
 | `ecforce/orders_new_autofill.html` | orders/new テンプレートに設置する自動入力スクリプトの正本 | ほぼ不変 |
 | `preview/index.html` | 偽LP(ローカル動作確認用) | 確認時に使う |
