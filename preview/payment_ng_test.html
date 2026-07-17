@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】与信NGリカバリー(paymentFallback)テスト</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; margin: 0 auto; max-width: 640px; padding: 16px; color: #333; }
+  .alert_ec { background: #fdecea; border: 1px solid #f5c6cb; color: #b02a37; padding: 12px; margin: 10px 0; }
+  form { display: grid; gap: 8px; }
+  label { font-size: 12px; }
+  input, select { font-size: 14px; padding: 6px; width: 100%; box-sizing: border-box; }
+  .howto { background: #f6f9ff; border: 1px solid #b9c8e8; padding: 10px 14px; font-size: 12.5px; line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<h1 style="font-size:18px">与信NGリカバリーの再現ページ</h1>
+<div class="howto">
+  <b>テストモード(URLパラメータ):</b><br>
+  ・<a href="payment_ng_test.html?ng=1">?ng=1</a> … 与信NG画面(パスワードは質問シナリオ) → <b>案内→PW再質問→カード→送信</b><br>
+  ・<a href="payment_ng_test.html?ng=1&skip=1">?ng=1&skip=1</a> … skip:{password:'auto'} のLP → <b>案内→カードのみ→送信</b>(PWは自動生成)<br>
+  ・<a href="payment_ng_test.html?ng=1&nopw=1">?ng=1&nopw=1</a> … フォームにPW欄が無いLP → <b>案内→カードのみ→送信</b><br>
+  ・<a href="payment_ng_test.html?ng=1&held=1">?ng=1&held=1</a> … 引き継ぎ成功ケース → <b>案内→カードのみ→送信</b>(PW=held-pass-1234が自動復元)<br>
+  ・<a href="payment_ng_test.html?ng=1&pm=21">?ng=1&pm=21</a> … クレカ自体の失敗(pm=クレカID) → <b>発動しない</b>(通常フロー)<br>
+  ・<a href="payment_ng_test.html">パラメータ無し</a> … 通常LP。チャットを完走すると自動送信が<b>この?ng=1画面へ遷移</b>(実際の弾き返しを一気通貫で再現。PW引き継ぎの本番同等テスト)<br>
+  ・<a href="payment_ng_test.html?ng=1&off=1">?ng=1&off=1</a> … paymentFallbackタグ未設定 → <b>何も起きない</b>(既定OFFの確認)
+</div>
+
+<div id="ng-alert" class="alert_ec alert-danger_ec" style="display:none">
+  <p>20 : 与信審査が通りませんでした。大変恐れいりますが他の決済手段をご利用ください。</p>
+</div>
+
+<h2 style="font-size:15px">ご注文フォーム（モック・実LPと同name属性）</h2>
+<form action="/lp" method="post" onsubmit="return false">
+  <input type="hidden" name="payment_error_code" value="">
+  <table><tr class="input_variant_ec"><td>
+    <div class="form_group_ec">HugSkin C10 オールインセラム【定期】_0012</div>
+  </td></tr></table>
+  <input type="hidden" name="order[order_items_attributes][][variant_id]" value="23">
+  <input type="hidden" name="order[order_items_attributes][][quantity]" value="1">
+  <label>お名前<input name="order[billing_address_attributes][name01]"></label>
+  <label>フリガナ<input name="order[billing_address_attributes][kana01]"></label>
+  <label>郵便番号<input name="order[billing_address_attributes][zip01]"></label>
+  <label>都道府県
+    <select name="order[billing_address_attributes][prefecture_id]">
+      <option value="">選択してください</option>
+      <option value="13">東京都</option><option value="27">大阪府</option>
+    </select>
+  </label>
+  <label>住所1<input name="order[billing_address_attributes][addr01]"></label>
+  <label>住所2<input name="order[billing_address_attributes][addr02]"></label>
+  <label>電話番号<input name="order[billing_address_attributes][tel01]"></label>
+  <label>メールアドレス<input type="email" name="order[email]"></label>
+  <label id="pw-row">パスワード<input type="password" name="order[customer_attributes][password]"></label>
+  <label>性別
+    <select name="order[customer_attributes][sex_id]">
+      <option value="">選択してください</option><option value="1">男性</option><option value="2">女性</option>
+    </select>
+  </label>
+  <label>生年月日
+    <select name="order[customer_attributes][birth(1i)]"><option value=""></option><option value="1990">1990</option><option value="1992">1992</option></select>
+    <select name="order[customer_attributes][birth(2i)]"><option value=""></option><option value="1">1</option><option value="6">6</option><option value="12">12</option></select>
+    <select name="order[customer_attributes][birth(3i)]"><option value=""></option><option value="1">1</option><option value="15">15</option><option value="31">31</option></select>
+  </label>
+  <label>お支払い方法
+    <select name="order[payment_attributes][payment_method_id]">
+      <option value="">選択してください</option>
+      <option value="21">クレジットカード一括</option>
+      <option value="102">NP後払いリアルタイムwiz</option>
+    </select>
+  </label>
+  <label>カード番号<input name="order[payment_attributes][source_attributes][number]"></label>
+  <label>有効期限(月)
+    <select name="order[payment_attributes][source_attributes][month]">
+      <option value=""></option><option value="1">1</option><option value="4">4</option><option value="9">9</option><option value="12">12</option>
+    </select>
+  </label>
+  <label>有効期限(年・下2桁)
+    <select name="order[payment_attributes][source_attributes][year]">
+      <option value=""></option><option value="27">27</option><option value="28">28</option><option value="30">30</option>
+    </select>
+  </label>
+  <label>カード名義<input name="order[payment_attributes][source_attributes][name]"></label>
+  <table style="font-size:12px">
+    <tr><td class="qa-product_name">HugSkin C10 オールインセラム【定期】_0012</td>
+        <td class="qa-product_price">2,709円</td><td class="qa-product_quantity">1 個</td></tr>
+    <tr><td>合計 <span class="qa-total">2,980円</span></td></tr>
+  </table>
+  <label style="display:none">
+    <input type="checkbox" name="order[payment_attributes][source_attributes][consent]" style="width:auto"> 後払い規約に同意する
+  </label>
+  <input type="submit" value="ご注文完了へ" id="mock-submit">
+</form>
+
+<div id="result" style="margin:14px 0;padding:10px;background:#eefbee;border:1px solid #9c9;font-size:12px;display:none"></div>
+
+<script>
+window.dataLayer = window.dataLayer || [];   /* GTM相当(計測イベントの確認用) */
+(function () {
+  var q = location.search;
+  var has = function (k) { return new RegExp('[?&]' + k + '=').test(q); };
+  var F = document.forms[0];
+  var set = function (name, val) {
+    var el = F.querySelector('[name="' + name + '"]');
+    if (el) el.value = val;
+  };
+
+  if (has('ng')) {
+    /* --- ecforceが与信NGで弾き返した画面を再現 --- */
+    document.getElementById('ng-alert').style.display = 'block';
+    set('payment_error_code', 'NG999');
+    /* ecforceの再描画どおり、パスワード以外の項目は値が入った状態にする(Befas実測準拠) */
+    set('order[billing_address_attributes][name01]', 'てすと 太郎');
+    set('order[billing_address_attributes][kana01]', 'テスト タロウ');
+    set('order[billing_address_attributes][zip01]', '1500001');
+    set('order[billing_address_attributes][prefecture_id]', '13');
+    set('order[billing_address_attributes][addr01]', '渋谷区神宮前');
+    set('order[billing_address_attributes][addr02]', '1-2-3');
+    set('order[billing_address_attributes][tel01]', '09011112222');
+    set('order[email]', 'test@example.com');
+    set('order[customer_attributes][sex_id]', '2');
+    set('order[customer_attributes][birth(1i)]', '1992');
+    set('order[customer_attributes][birth(2i)]', '6');
+    set('order[customer_attributes][birth(3i)]', '15');
+    set('order[payment_attributes][payment_method_id]', has('pm') ? (q.match(/[?&]pm=(\d+)/) || [])[1] : '102');
+    /* ?held=1: チャットが自動送信直前に預けるsessionStorage(hs_pw_hold)を再現。
+       ⚠️chatbot.jsのpwXor('hs-pf-26')+btoaと同じ形式(内部形式を変えたらここも直す) */
+    if (has('held')) {
+      var xk = 'hs-pf-26', pw = 'held-pass-1234', x = '';
+      for (var i = 0; i < pw.length; i++) x += String.fromCharCode(pw.charCodeAt(i) ^ xk.charCodeAt(i % xk.length));
+      sessionStorage.setItem('hs_pw_hold', JSON.stringify({ v: btoa(unescape(encodeURIComponent(x))), t: Date.now() }));
+    }
+  }
+  if (has('nopw')) document.getElementById('pw-row').remove();
+
+  /* 注文ボタン: 通常ページから押されたら与信NG画面へ遷移(実際の弾き返しの再現)。
+     NG画面から押されたら(=リカバリーの再送信)結果を表示して成功扱い */
+  document.getElementById('mock-submit').addEventListener('click', function (e) {
+    e.preventDefault();
+    if (!has('ng')) {
+      location.href = 'payment_ng_test.html?ng=1&pm=102' + (has('skip') ? '&skip=1' : '');
+      return;
+    }
+    var r = document.getElementById('result');
+    var v = function (name) { var el = F.querySelector('[name="' + name + '"]'); return el ? el.value : '(欄なし)'; };
+    r.style.display = 'block';
+    r.innerHTML = '<b>✅ 再送信された内容(モック):</b><br>'
+      + '支払い方法ID: ' + v('order[payment_attributes][payment_method_id]') + ' (期待値: 21=クレジット)<br>'
+      + 'パスワード: ' + (v('order[customer_attributes][password]') || '(空)') + '<br>'
+      + 'カード番号: ' + v('order[payment_attributes][source_attributes][number]')
+      + ' / ' + v('order[payment_attributes][source_attributes][month]') + '/' + v('order[payment_attributes][source_attributes][year]')
+      + ' / ' + v('order[payment_attributes][source_attributes][name]');
+    r.scrollIntoView();
+  });
+
+  /* --- タグ(window.HS_CHAT)の再現 --- */
+  window.HS_CHAT = {
+    scenario: 'standard',
+    mode: 'float',
+    autoOpen: 'manual',   /* manualでも与信NG検知時は自動で開くことのテスト */
+    opening: { stockCheck: false },
+  };
+  if (!has('off')) window.HS_CHAT.paymentFallback = {};
+  if (has('skip')) window.HS_CHAT.skip = { password: 'auto' };
+  if (!has('ng')) window.HS_CHAT.autoOpen = 'immediate';   /* 通常ページは通常どおり自動起動 */
+})();
+</script>
+<script src="../chatbot.js" defer></script>
+
+</body>
+</html>

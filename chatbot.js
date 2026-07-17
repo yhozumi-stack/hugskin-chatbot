@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.25.0
+    HugSkin 獲得チャットボット v3.26.0
+    (v3.26.0: 与信NGリカバリー paymentFallback を追加。既定OFF=タグで
+     設定したLPだけ有効。後払いの与信NGでecforceに弾き返された画面を
+     自動検知し、チャットが自動で開いてクレカ再注文に誘導する。
+     検知アンカー等は2026-07-17にBefas与信NG実画面で実測。
+     詳細はDEFAULTSのコメントとCLAUDE.mdレシピ18)
     (v3.25.0: 計測のhs_pageを「パス+u=広告コード」の短い正規形に変更。
      GA4カスタムディメンションの100文字切りで、記事経由の長いURL(ab=/af=/
      fbclid=がu=の前に付く)からu=が落ちて集計不能になる問題の根本対応。
@@ -67,6 +72,25 @@ var DEFAULTS = {
      ※注文送信後は出さない(自動判定)。popup.jsの'chatclose'トリガーとの併用は
        二重引き止めになるのでどちらか片方だけ使うこと */
   closeConfirm: null,
+  /* 与信NGリカバリー(後払いの与信落ちをクレジットカード再注文に誘導)。
+     ⚠️既定OFF(null)=タグで paymentFallback を設定したLPだけ有効(全LPには影響しない)。
+     後払い等の与信NGでecforceがLPへ弾き返した画面を自動検知し、チャットが自動で開いて
+     「クレジットカードでのご注文」に切替→カード情報だけ再入力→自動送信で復旧する。
+     ・住所・氏名等はecforceがフォームに再表示した値をそのまま使う(再質問しない)
+     ・パスワードは送信直前にsessionStorageへ預けた値を自動復元(1回使い切り・15分期限)。
+       復元できなければ skip設定があれば新値を自動生成、無ければ1問だけ再質問。
+       フォームにパスワード欄自体が無いLPでは何もしない
+     ・確認画面(summary)は挟まない(案内→カード入力→即送信の最短導線)
+     ・失敗した支払いがクレジット自体の時は発動しない(誤爆防止)
+     ※ecforce側の後払いが「リアルタイム(同期)与信」設定でないと発動しない
+       (注文成立後の非同期与信NGではLPに戻ってこないため検知できない)
+     タグ例(文言は全部任意・最小は paymentFallback: {} でON):
+       paymentFallback: {
+         msg:   '今回のお手続きでは、後払い決済がご利用いただけませんでした🙏\n誠に申し訳ございませんが、クレジットカードでのお手続きをお願いいたします',
+         msg2:  'クレジットカード情報のご入力をお願いいたします',
+         pwMsg: 'セキュリティ保護のため、パスワードのみもう一度ご入力ください🙏',
+       } */
+  paymentFallback: null,
   /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
      例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' }
      同意チェックボックス関連:
@@ -478,6 +502,7 @@ var editReturnIdx = null;  // 修正完了後に戻るステップindex
 var pendingIdx = 0;        // いま表示中の質問のステップindex
 var prefilled = false;     // 確認画面表示時にLPフォームへ先行転記済みか
 var chatAgreeChecked = null;  // 確認画面の利用規約チェック状態(null=チェックUI非表示)
+var payNG = null;          // 与信NGリカバリー対象(mount時に判定。{value,label}=クレカ選択肢 / null=非対象)
 var totalInput = steps.filter(function (s) {
   return s.type === 'fields' || s.type === 'zip' || s.type === 'choice' || s.type === 'card' || s.type === 'birth' || s.type === 'address';
 }).length;
@@ -733,6 +758,11 @@ function mount() {
   /* 商品名が未設定ならLPから自動取得(商品が変わってもタグ・シナリオの修正不要) */
   if (!CFG.vars.PRODUCT) CFG.vars.PRODUCT = readProductName();
 
+  /* 与信NGで弾き返された画面か(paymentFallback設定LPのみ)。hideFormの判定より先に見る */
+  try { payNG = paymentNGRecovery(); } catch (ePf) {}
+  /* 与信NGリカバリー以外のページでは、預かりパスワードを即破棄する(露出窓の最小化) */
+  if (!payNG) clearPwHold();
+
   /* hideForm: LPの注文フォームを隠す(エラー画面では隠さない。詳細はDEFAULTSのコメント) */
   try { hideLpForm(); } catch (eHide) {}
 
@@ -764,8 +794,8 @@ function mount() {
     wrap.appendChild(launcherEl);
   }
 
-  /* メール既登録エラーで戻ってきた画面では、設定に関わらず自動で開いて案内する */
-  if (detectDupEmailError()) return openPanel();
+  /* メール既登録エラー・与信NGで戻ってきた画面では、設定に関わらず自動で開いて案内する */
+  if (payNG || detectDupEmailError()) return openPanel();
 
   var a = String(CFG.autoOpen || 'manual');
   if (a === 'immediate') openPanel();
@@ -856,6 +886,8 @@ function startFlow() {
   started = true;
   /* ABテスト用: Clarityにシナリオ名をタグ付け(セッション絞り込みに使う) */
   try { if (window.clarity) window.clarity('set', 'hs_scenario', CFG.scenario); } catch (e) {}
+  /* 与信NGで弾かれて戻ってきた画面なら、通常フローではなく短縮リカバリーを開始 */
+  if (payNG) { runPaymentRecovery(); return; }
   /* 送信後「メール既登録」で弾かれて戻ってきた画面なら、先にログイン案内を出す */
   if (detectDupEmailError()) {
     track('dup_email_detected');
@@ -1022,6 +1054,12 @@ async function runStepInner(i) {
   if (s.type === 'card' && (answers.payment_label || '').indexOf('クレジット') < 0) {
     return editMode ? next(i) : runStep(i + 1);
   }
+  /* 与信NGリカバリーの最終ステップ: 確認画面を挟まず即転記→自動送信 */
+  if (s.type === 'pf_submit') {
+    track('payment_ng_retry');
+    transfer();
+    return;
+  }
 
   /* --- 入力系 --- */
   /* 質問の直前に画像(タグの stepImages で指定)を出す */
@@ -1186,6 +1224,135 @@ function detectDupEmailError() {
     var t = document.body.innerText || '';
     return /(メールアドレス|Ｅメール|Eメール|email)[^\n。]{0,40}(既に|すでに)[^\n。]{0,15}(登録|使用|存在)/i.test(t);
   } catch (e) { return false; }
+}
+
+/* ============================================================
+   与信NGリカバリー(paymentFallback・既定OFF。詳細はDEFAULTSのコメント)
+   ------------------------------------------------------------
+   検知は2026-07-17にBefas(ecforce+NP後払いリアルタイムwiz)の与信NG
+   実画面で実測した2段構え:
+     ① hidden input[name="payment_error_code"] に値が入る(実測値"NG999"。
+        表示コードや文言が変わっても効く最優先アンカー)
+     ② alert系要素に「与信審査が通りません」の文言(①が消えた時の保険。
+        実画面では .alert_ec.alert-danger_ec に「20 : 与信審査が通りませんでした。
+        大変恐れいりますが他の決済手段をご利用ください。」が出る)
+   弾き返しURLは /lp/new?at=lp-form&pm=<失敗した支払いID>&u=…(実測) */
+function detectPaymentNGError() {
+  try {
+    var pec = document.querySelector('input[name="payment_error_code"]');
+    if (pec && pec.value) return true;
+    var els = document.querySelectorAll('[class*="alert"]');
+    for (var i = 0; i < els.length; i++) {
+      if (!els[i].offsetParent) continue;   /* 非表示のalertは無視(display:noneでもinnerTextは中身を返すため) */
+      if (/与信審査が通りません/.test(els[i].innerText || '')) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+/* 与信NGリカバリーを発動できる画面なら、切替先のクレジット選択肢{value,label}を返す。
+   発動条件: ①タグでpaymentFallback有効 ②与信NG画面 ③フォームにクレジットの選択肢がある
+   ④失敗した支払いがクレジット以外(=後払い系)。クレカ自体の決済失敗に
+   「クレジットカードでお願いします」と案内する矛盾を構造的に防ぐ */
+function paymentNGRecovery() {
+  if (!CFG.paymentFallback || CFG.transferMode === 'redirect') return null;
+  if (!detectPaymentNGError()) return null;
+  var sel = document.querySelector('[name="order[payment_attributes][payment_method_id]"]');
+  if (!sel || !sel.options) return null;
+  var failed = '', credit = null, i, o;
+  for (i = 0; i < sel.options.length; i++) {
+    o = sel.options[i];
+    if (!o.value) continue;
+    if (o.selected) failed = o.text;
+    if (!credit && o.text.indexOf('クレジット') >= 0) credit = { value: o.value, label: o.text.trim() };
+  }
+  /* 失敗した支払い方法はURLのpm=が最も確実(selectの選択状態はecforceの再描画次第のため) */
+  try {
+    var pm = (location.search.match(/[?&]pm=(\d+)/) || [])[1];
+    if (pm) for (i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === pm) failed = sel.options[i].text;
+    }
+  } catch (e) {}
+  if (!credit) return null;
+  if (failed.indexOf('クレジット') >= 0) return null;
+  return credit;
+}
+
+/* パスワードの一時預かり(与信NGで弾き返された時の引き継ぎ用)。
+   転記時にsessionStorageへ難読化して保存し、与信NGで戻ってきた時だけ読み出す。
+   1回使い切り+15分期限+与信NG以外のページ読込では即破棄、で露出窓を最小にする。
+   ⚠️難読化は覗き見防止レベルで暗号化ではない。カード情報は絶対に預けない。 */
+var PW_HOLD_KEY = 'hs_pw_hold';
+var PW_XK = 'hs-pf-26';
+function pwXor(s) {
+  var out = '';
+  for (var i = 0; i < s.length; i++) out += String.fromCharCode(s.charCodeAt(i) ^ PW_XK.charCodeAt(i % PW_XK.length));
+  return out;
+}
+function savePwHold() {
+  if (!CFG.paymentFallback || !answers.password) return;
+  try {
+    sessionStorage.setItem(PW_HOLD_KEY, JSON.stringify({
+      v: btoa(unescape(encodeURIComponent(pwXor(answers.password)))), t: Date.now(),
+    }));
+  } catch (e) {}
+}
+function takePwHold() {
+  try {
+    var raw = sessionStorage.getItem(PW_HOLD_KEY);
+    sessionStorage.removeItem(PW_HOLD_KEY);   // 1回使い切り
+    if (!raw) return '';
+    var d = JSON.parse(raw);
+    if (!d || !d.v || Date.now() - (d.t || 0) > 15 * 60 * 1000) return '';
+    return pwXor(decodeURIComponent(escape(atob(d.v))));
+  } catch (e) { return ''; }
+}
+function clearPwHold() { try { sessionStorage.removeItem(PW_HOLD_KEY); } catch (e) {} }
+
+/* リカバリー本体: 案内→(必要ならパスワード1問)→カード入力→即転記・自動送信。
+   確認画面(summary)は挟まない。住所等はecforceがフォームに再表示済みの値を使う
+   (answersが空の項目はfillLocalFormが上書きしないので、フォームの値がそのまま残る) */
+async function runPaymentRecovery() {
+  track('payment_ng_detected');
+  var pf = CFG.paymentFallback || {};
+  /* 支払いをクレジットに切替(カード表示条件・転記・自動送信の判定が全てこれで通る) */
+  answers.payment = payNG.value;
+  answers.payment_label = payNG.label;
+
+  /* パスワード復旧の優先順:
+     ①フォームに欄が無い(ecforce設問から除外) → 何もしない
+     ②欄に値が残っている(ブラウザ補完等) → そのまま使う
+     ③sessionStorageの預かり値 → 黙って復元
+     ④タグのskip設定あり → transfer時のresolveSkips()が新値を自動生成
+     ⑤どれも無い → 1問だけ再質問 */
+  var needAskPw = false;
+  var pwField = document.querySelector('[name="order[customer_attributes][password]"]');
+  if (pwField && !pwField.value && !answers.password) {
+    var held = takePwHold();
+    if (held) answers.password = held;
+    else if (!('password' in SKIP)) needAskPw = true;
+  }
+
+  var rec = [];
+  if (needAskPw) {
+    rec.push({ type: 'fields', key: 'password',
+      intro: pf.pwMsg || 'セキュリティ保護のため、パスワードのみもう一度ご入力ください🙏',
+      layout: 'stack',
+      fields: [{ key: 'password', label: 'パスワード（半角英数8文字以上）',
+        inputType: 'password', autocomplete: 'new-password', validate: 'password', displayAs: '••••••••' }] });
+  }
+  rec.push({ type: 'card', key: 'card',
+    intro: pf.msg2 != null ? pf.msg2 : 'クレジットカード情報のご入力をお願いいたします' });
+  rec.push({ type: 'pf_submit' });
+  steps = rec;
+  totalInput = rec.length - 1;
+  doneCount = 0;
+  pendingIdx = 0;
+  progress();
+
+  var t = typing(); await delay(CFG.typingMs); t.remove();
+  botBubble(pf.msg || '今回のお手続きでは、後払い決済がご利用いただけませんでした🙏\n誠に申し訳ございませんが、クレジットカードでのお手続きをお願いいたします');
+  runStep(0);
 }
 
 function fieldInputHtml(f, idx) {
@@ -1857,7 +2024,10 @@ function hideLpForm() {
   var f = findLocalForm();
   if (!f) return;
   if (detectDupEmailError()) return;   // 既登録エラー画面では隠さない(案内チャットが自動で開く)
-  if (hasVisibleFormError(f)) return;  // ecforceのエラー表示中は隠さない(お客様が直せるように)
+  /* ecforceのエラー表示中は隠さない(お客様が直せるように)。
+     例外: 与信NGリカバリー起動時はチャットが復旧まで面倒を見るので隠したままにする
+     (skipのダミー値と生々しいエラー文言を見せない。×で閉じれば従来どおり再表示される) */
+  if (hasVisibleFormError(f) && !payNG) return;
   f.setAttribute('data-hs-hide', '1');
   if (!document.getElementById('hs-hide-style')) {
     var st = document.createElement('style');
@@ -2023,6 +2193,8 @@ function transferInner() {
        未転記(リダイレクト設定変更等)の場合のみ通常転記 */
     if (!prefilled) fillLocalForm(localForm);
     track('fill_local');
+    /* 与信NGで弾き返された時にパスワードを引き継ぐための一時預かり(paymentFallback設定LPのみ) */
+    try { savePwHold(); } catch (ePw) {}
     var sbtn = wrap.querySelector('.sum .go');
 
     /* hideForm利用時: クレカ×自動送信で完結するとき以外は、ここでフォームを出す。
