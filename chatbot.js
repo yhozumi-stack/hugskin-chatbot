@@ -1,5 +1,8 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.26.0
+    HugSkin 獲得チャットボット v3.26.1
+    (v3.26.1: codNoticeImage を追加(既定OFF)。後払い選択直後に訴求バナー
+     画像(NP後払いwiz等)を出せる。Befas方式=バナーだけにしたい時は
+     codNoticeImage を設定して codNotice: '' にする)
     (v3.26.0: 与信NGリカバリー paymentFallback を追加。既定OFF=タグで
      設定したLPだけ有効。後払いの与信NGでecforceに弾き返された画面を
      自動検知し、チャットが自動で開いてクレカ再注文に誘導する。
@@ -52,6 +55,11 @@ var DEFAULTS = {
   /* 質問の直前に画像を出す(キー=ステップkey、値=画像URL)。
      例: stepImages: { payment: 'https://…/payment_promo.png' } */
   stepImages: {},
+  /* 後払いを選んだ直後に表示する訴求バナー画像(NP後払いwiz公式バナー等)。
+     ''(既定)なら出さない。テキスト(codNotice)より先=上に表示される。
+     - バナー+規約文: codNoticeImage と codNotice を両方設定
+     - バナーだけ(Befas/I-ne方式): codNoticeImage を設定し codNotice: '' */
+  codNoticeImage: '',
   /* 後払いを選んだ直後に表示する規約・注意文(空なら非表示)。タグで上書き可 */
   codNotice: '利用規約\n\n払込票は商品とは別に株式会社SCOREより郵送されます。発行から14日以内にコンビニでお支払いください。 代金債権とそれに付帯する個人情報は、包括的な決済サービスを提供する株式会社DGフィナンシャルテクノロジーに譲渡・提供されたうえで、さらに同社から後払い決済サービスを提供する株式会社SCOREに対し、再譲渡・提供されますので、当該第三者への譲渡・提供に同意の上、お申込みください。与信審査の結果により他のお支払い方法をご利用いただく場合もございます。 詳しくは、お支払い方法ページに記載されている【ベリトランス後払い（コンビニ後払い）】で必ず確認してください。 ご利用者が未成年の場合は、法定代理人の利用同意を得てご利用ください。\n個人情報の提供に関する問合せ先：support@hugskin.shop\n●後払い手数料：無料\n●利用限度額：55,000円（税込）',
   /* カウントダウンバー(緊急性演出)。true か {text:'…'} で有効。
@@ -1167,8 +1175,12 @@ function renderChoice(s, i) {
       userBubble(c.label, s.key);
       if (!editMode) { doneCount++; progress(); }
       track('step_' + s.key);
-      /* 後払いを選んだら規約・注意文を表示(タグの codNotice。空文字にすれば非表示)。
-         デザインはform-plus準拠: 「利用規約」タイトル+ピンク本文+「無料」赤字 */
+      /* 後払いを選んだら訴求バナー(codNoticeImage)と規約・注意文(codNotice)を表示。
+         どちらも空なら非表示。バナーだけ(Befas/I-ne方式)にするなら codNotice: '' にする。
+         テキストのデザインはform-plus準拠: 「利用規約」タイトル+ピンク本文+「無料」赤字 */
+      if (s.key === 'payment' && c.label.indexOf('後払い') >= 0 && CFG.codNoticeImage) {
+        imgBubble(CFG.codNoticeImage);
+      }
       if (s.key === 'payment' && c.label.indexOf('後払い') >= 0 && CFG.codNotice) {
         var nb = document.createElement('div');
         nb.className = 'law-card';
