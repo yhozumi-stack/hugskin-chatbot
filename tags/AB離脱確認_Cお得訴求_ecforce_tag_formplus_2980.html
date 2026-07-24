@@ -1,0 +1,52 @@
+<!-- ============================================================
+  HugSkin チャットボット タグ【離脱確認AB 分岐C: お得訴求・formplus 2,980円LP用】
+  ------------------------------------------------------------
+  ecforce ABテスト機能の分岐C用。×押下時の閉じ確認(closeConfirm)を
+  お得訴求画像(86%OFF 2,980円/4,000円クーポン/最安値)で表示する。
+    分岐A(コントロール) … 現行タグのまま(閉じ確認なし)
+    分岐B               … 閉じ確認あり(安心訴求) → 別ファイル
+    分岐C(このタグ)     … 閉じ確認あり(お得訴求)
+  分岐CのURLには u=inso29_〜 を設定すること(計測がu=接頭辞でアームを判定)。
+
+  ecforce タグ管理: このまま全部コピーして分岐CのLPに登録(位置: body)
+
+  注意:
+  - LP離脱POP(HS_POPUP)を併用する場合、triggers に 'chatclose' は入れない
+  - 動作確認: 分岐CのURLに &u=inso29_test を付けて×押下(本番集計から自動分離)
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus',
+  vars: {
+    PRICE: '2,980円（税込）',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  openTriggers: 'a[href="#lp-form"]',
+  launcher: false,
+  countdown: true,
+  summaryOptions: { modal: true },
+  cardCvv: false,
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（別送：コンビニ後払い）',
+  },
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+  closeConfirm: {
+    title: '初回限定チャットを閉じますか？',
+    leaveText: '閉じる',
+    stayText: 'チャットに戻る',
+    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_offer_680w.webp?v=1',
+  },
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=22" defer></script>
