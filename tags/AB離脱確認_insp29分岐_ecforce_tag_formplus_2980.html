@@ -1,0 +1,67 @@
+<!-- ============================================================
+  HugSkin チャットボット タグ【離脱確認AB(insp29分岐)・formplus 2,980円LP用】
+  ------------------------------------------------------------
+  ABテスト: 自動起動チャットの「×押下時の閉じ確認(closeConfirm)」効果検証
+    ・u=ins29〜  … 従来どおり(閉じ確認なし) = コントロール
+    ・u=insp29〜 … 閉じ確認あり(安心訴求画像)
+  広告側でURLの u= を 50/50 に分けるだけ。タグはこれ1つで両対応。
+
+  ecforce タグ管理: このまま全部コピーして現行タグと差し替え(位置: body)
+
+  注意:
+  - LP離脱POP(HS_POPUP)を併用する場合、triggers に 'chatclose' は入れない
+    (×→確認→閉じる→さらにPOPの二重引き止めになるため)
+  - 動作確認URL(本番集計から自動分離):
+      閉じ確認あり: https://hugskin.shop/lp?u=insp29_test
+      閉じ確認なし: https://hugskin.shop/lp?u=ins29_test
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus',
+  vars: {
+    PRICE: '2,980円（税込）',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  openTriggers: 'a[href="#lp-form"]',
+  launcher: false,
+  countdown: true,
+  summaryOptions: { modal: true },
+  cardCvv: false,
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（別送：コンビニ後払い）',
+  },
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+};
+
+/* ABテスト分岐: u=insp29〜 の流入だけ ×押下時の閉じ確認(closeConfirm)をON。
+   u= の取得と sessionStorage 保持は chatbot.js(hs_u)と同じ方式=ページ内遷移で
+   u= が落ちても同一セッション中は判定が変わらない */
+(function () {
+  var u = '';
+  try {
+    u = new URLSearchParams(location.search).get('u') || '';
+    if (u) sessionStorage.setItem('hs_u', u);
+    else u = sessionStorage.getItem('hs_u') || '';
+  } catch (e) {}
+  if (/^insp29/i.test(u)) {
+    window.HS_CHAT.closeConfirm = {
+      title: '初回限定チャットを閉じますか？',
+      leaveText: '閉じる',
+      stayText: 'チャットに戻る',
+      image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_reassurance_680w.webp?v=1',
+    };
+  }
+})();
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=22" defer></script>
