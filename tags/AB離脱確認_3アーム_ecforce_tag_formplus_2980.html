@@ -1,10 +1,11 @@
 <!-- ============================================================
-  HugSkin チャットボット タグ【離脱確認AB(insp29分岐)・formplus 2,980円LP用】
+  HugSkin チャットボット タグ【離脱確認AB 3アーム・formplus 2,980円LP用】
   ------------------------------------------------------------
   ABテスト: 自動起動チャットの「×押下時の閉じ確認(closeConfirm)」効果検証
-    ・u=ins29〜  … 従来どおり(閉じ確認なし) = コントロール
-    ・u=insp29〜 … 閉じ確認あり(安心訴求画像)
-  広告側でURLの u= を 50/50 に分けるだけ。タグはこれ1つで両対応。
+    ・u=ins29〜  … 閉じ確認なし = コントロール
+    ・u=insp29〜 … 閉じ確認あり(安心訴求: 回数縛りなし/10日前まで解約可)
+    ・u=inso29〜 … 閉じ確認あり(お得訴求: 86%OFF 2,980円/最安値)
+  広告側でURLの u= を3等分するだけ。タグはこれ1つで3アーム対応。
 
   ecforce タグ管理: このまま全部コピーして現行タグと差し替え(位置: body)
 
@@ -12,8 +13,9 @@
   - LP離脱POP(HS_POPUP)を併用する場合、triggers に 'chatclose' は入れない
     (×→確認→閉じる→さらにPOPの二重引き止めになるため)
   - 動作確認URL(本番集計から自動分離):
-      閉じ確認あり: https://hugskin.shop/lp?u=insp29_test
-      閉じ確認なし: https://hugskin.shop/lp?u=ins29_test
+      安心訴求: https://hugskin.shop/lp?u=insp29_test
+      お得訴求: https://hugskin.shop/lp?u=inso29_test
+      確認なし: https://hugskin.shop/lp?u=ins29_test
 ============================================================ -->
 <script>
 window.HS_CHAT = {
@@ -44,7 +46,8 @@ window.HS_CHAT = {
   },
 };
 
-/* ABテスト分岐: u=insp29〜 の流入だけ ×押下時の閉じ確認(closeConfirm)をON。
+/* ABテスト分岐: u= の接頭辞で ×押下時の閉じ確認(closeConfirm)を出し分け。
+   insp29=安心訴求 / inso29=お得訴求 / それ以外(ins29等)=なし。
    u= の取得と sessionStorage 保持は chatbot.js(hs_u)と同じ方式=ページ内遷移で
    u= が落ちても同一セッション中は判定が変わらない */
 (function () {
@@ -54,12 +57,18 @@ window.HS_CHAT = {
     if (u) sessionStorage.setItem('hs_u', u);
     else u = sessionStorage.getItem('hs_u') || '';
   } catch (e) {}
+  var img = '';
   if (/^insp29/i.test(u)) {
+    img = 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_reassurance_680w.webp?v=1';
+  } else if (/^inso29/i.test(u)) {
+    img = 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_offer_680w.webp?v=1';
+  }
+  if (img) {
     window.HS_CHAT.closeConfirm = {
       title: '初回限定チャットを閉じますか？',
       leaveText: '閉じる',
       stayText: 'チャットに戻る',
-      image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_reassurance_680w.webp?v=1',
+      image: img,
     };
   }
 })();
