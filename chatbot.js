@@ -1,5 +1,8 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.27.1
+    HugSkin 獲得チャットボット v3.27.2
+    (v3.27.2: summaryOptions.lawText を追加(既定OFF)。「利用規約チェック後に
+     しかqa-cautionを表示しない」LPテーマで確認画面の注意喚起文が空になる
+     問題のフォールバック。qa-cautionが読めた時は従来どおりそちら優先)
     (v3.27.1: msgステップに style:'fine'(注記スタイル=ブランド色塗り+
      小さめ文字)を追加し、formplus_npの定期条件案内に適用。
      既存シナリオのmsgステップは無指定=従来の白吹き出しのまま)
@@ -110,6 +113,8 @@ var DEFAULTS = {
   /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
      例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' }
      lawFull: true … 注意喚起文(qa-caution転記)をスクロールなしで全文表示(NP審査対応。既定はfalse=150pxで内部スクロール)
+     lawText: '…' … 注意喚起文のフォールバック文言。LPのqa-cautionが読めない時(利用規約チェック後にしか
+                     表示しないLPテーマ等)だけ使われる。qa-cautionが読めた時はそちら優先
      同意チェックボックス関連:
        agree: true(既定=表示・チェック済) / 'unchecked'(表示・未チェックで開始) / false(非表示)
        agreeText: 同意文言の変更
@@ -1950,8 +1955,14 @@ async function renderSummary(s) {
   card.innerHTML = '<table>' + rows + '</table>'
     /* 特商法・定期条件の注意喚起(ecforceのqa-cautionを転記。最終確認画面の表示義務対応。
        タグで summaryOptions: { showLaw: false } にすると非表示にできる。
-       summaryOptions: { lawFull: true } でスクロールなしの全文表示(NP審査対応) */
-    + (os && os.caution && so.showLaw !== false ? '<div class="law' + (so.lawFull ? ' law-full' : '') + '">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
+       summaryOptions: { lawFull: true } でスクロールなしの全文表示(NP審査対応)。
+       LPが「利用規約チェック後にしかqa-cautionを表示しない」テーマの場合、チャットが読む
+       時点では空になるため、summaryOptions: { lawText: '…' } のフォールバック文言を表示
+       (qa-cautionが読めた時はそちら優先=オファー変更に自動追従) */
+    + (function () {
+        var lawTxt = (os && os.caution) || so.lawText || '';
+        return lawTxt && so.showLaw !== false ? '<div class="law' + (so.lawFull ? ' law-full' : '') + '">' + esc(lawTxt).replace(/\n/g, '<br>') + '</div>' : '';
+      })()
     + agreeHtml
     + '<button class="go">' + esc(so.submitLabel || s.submitLabel || '注文フォームへ進む →') + '</button>';
 

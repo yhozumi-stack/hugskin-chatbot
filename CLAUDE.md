@@ -288,6 +288,7 @@ NP(ネットプロテクションズ)の加盟店審査に向けたLP用の3点�
    「2回目以降11,440円(税込・送料無料)/お届けサイクル(30・45・60日または指定日)/解約は次回配送予定日の10日前まで」の案内msgが入る。
    案内は `key:'greet'` なので**金額改定時はタグの `greeting` で上書きするだけ**(push不要)。冒頭画像はタグの `opening.image`
 2. **確認画面の注意喚起文を全文表示**: `summaryOptions: { lawFull: true }`。qa-caution転記の150px内部スクロールを解除して全文を出す(既定OFF=従来どおり)
+   - **⚠️「利用規約にチェックを入れるまでqa-cautionが出ない」LPテーマ**ではチャットが注意喚起文を読めず空になる。その場合は `summaryOptions: { lawText: '…' }`(v3.27.2〜)でタグに直接文言を書く(qa-cautionが読めた時はそちら優先=通常LPではlawTextは使われない)。文言はLPで利用規約チェック後に表示される注意喚起文をそのままコピペ(特商法表示なので一字一句揃える)
 3. **同意チェックを未チェック開始に**(必要なら): `summaryOptions: { agree: 'unchecked' }`(既存機能。お客様がチェックするまで確定ボタン無効。チェック後はLPフォームの同意チェックにも自動反映)
 - preview確認: `http://localhost:8940/preview/?scenario=formplus_np&lawfull&openimg`(&lawfull=全文表示 / &openimg=冒頭画像のテスト表示)
 

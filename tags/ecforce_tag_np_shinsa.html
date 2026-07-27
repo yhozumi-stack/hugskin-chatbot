@@ -39,6 +39,12 @@ window.HS_CHAT = {
   summaryOptions: {
     modal: true,
     lawFull: true,                       /* ★審査対応②: 注意喚起文をスクロールなしで全文表示 */
+    /* ★審査対応③: 注意喚起文のフォールバック(v3.27.2〜)。
+       このLPは利用規約にチェックを入れるまでqa-caution(注意喚起文)がページに出ない
+       テーマのため、チャットが読めるようタグで直接指定する。
+       ⚠️下の文言は下書き。LPで利用規約にチェック→表示される注意喚起文を
+         そのままコピペして貼り替えること(特商法表示なので一字一句LPと揃える) */
+    lawText: '・初回は「HugSkin C10 ALL IN SERUM」1本を2,980円（税込）でお届けします。\n・2回目以降は20%OFFの11,440円（税込）で30日前後を目安にお届けします。解約のお申し出があるまで定期的にお届けする自動更新コースです。\n・解約は次回発送予定日の10日前までにマイページよりお手続きください。',
     /* LP側の同意チェックをデフォルトOFFにする場合は必ず↓を有効化
     agree: 'unchecked',
     */
@@ -60,4 +66,4 @@ window.HS_CHAT = {
   },
 };
 </script>
-<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=25" defer></script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=26" defer></script>
