@@ -2,48 +2,62 @@
   HugSkin 獲得チャットボット NP後払い審査用タグ（正本・v3.27.0〜）
   ------------------------------------------------------------
   NP（ネットプロテクションズ）の加盟店審査に向けたLP用。
-  ecforce 管理画面 > タグ管理 でこのタグを登録し、審査用LPに適用する。
-  既存LPのタグは一切触らない（このタグを貼ったLPだけで有効）。
+  本番CTA起動タグ（formplus・モーダル確認画面）をベースに、審査対応の
+  2点だけを追加した構成。ecforce 管理画面 > タグ管理 で登録し、
+  審査用LPだけに適用する（既存LPのタグは一切触らない）。
 
-  ▼ 通常タグとの違い（審査対応の3点）
-    ① scenario: 'formplus_np'
+  ▼ ベースタグ（本番formplus CTA起動版）との差分は2箇所だけ
+    ① scenario: 'formplus' → 'formplus_np'
        … 冒頭（最初の入力の前）に定期コース条件の案内を表示
-         （2回目以降の決済金額 / お届けサイクル / 解約条件）。
-         文言を変えたい時は下の greeting の上書き例を使う（push不要）
-    ② opening.image
-       … 冒頭画像。審査用のビジュアルURLを設定する（空なら画像なし）
-    ③ summaryOptions.lawFull: true
-       … 確認画面の注意喚起文（ecforceのqa-caution転記）を
-         スクロールなしで全文表示（既定は150pxで内部スクロール）
+         （2回目以降11,440円 / お届けサイクル30・45・60日または指定日 /
+          解約は次回配送予定日の10日前まで）。
+         文言を変えたい時はタグに greeting: '…' を足すだけ（push不要）
+    ② summaryOptions に lawFull: true を追加
+       … 確認画面の注意喚起文（ecforceのqa-caution転記）の
+         150px内部スクロールを解除し、省略なしの全文表示にする
+
+  ▼ 同意チェックの組み合わせルール（2026-07-27決定）
+    ・LP側の同意チェックをデフォルトOFFにする場合は、下の
+      agree: 'unchecked' を必ず有効化する（チャットでお客様が
+      明示チェック→確定時にLP側チェックにも自動反映される）
+    ・agree: false（非表示）だけはLP側OFFと絶対に組み合わせない
+      （誰もチェックしないまま送信→ecforceに弾かれる唯一のNG構成）
 
   ▼ 配信URL: https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js
 ============================================================ -->
 <script>
 window.HS_CHAT = {
-  scenario: 'formplus_np',
-  cardCvv: false,   /* ZEUSがセキュリティコード不要設定のため、隠れCVV欄があっても聞かない・転記しない */
+  scenario: 'formplus_np',               /* ★審査対応①: 冒頭に定期コース条件の案内 */
   vars: {
-    PRODUCT: 'HugSkin C10 ALL IN SERUM',
-    PRICE:   '初回限定 2,980円（税込）',   /* 審査用LPのオファーに合わせて変更 */
-    OFFER:   '初回限定',
+    PRICE: '2,980円（税込）',
   },
   mode: 'float',
-  autoOpen: 'immediate',
-  opening: {
-    image: '',              /* ★冒頭画像URLをここに設定（例: https://yhozumi-stack.github.io/hugskin-chatbot/img/np_opening.png） */
-    stockCheck: true,
-    stockGifUrl: '',
-  },
+  autoOpen: 'manual',
+  openTriggers: 'a[href="#lp-form"]',
+  launcher: false,
+  countdown: true,
   summaryOptions: {
-    lawFull: true,          /* 確認画面の注意喚起文をスクロールなしで全文表示（NP審査対応） */
-    /* 同意チェックを「未チェックで開始」にしたい場合は下の1行を有効化
-       （お客様が自分でチェックしないと確定ボタンが押せなくなる。
-        チェック後の同意はLPフォーム側の同意チェックにも自動反映される） */
-    // agree: 'unchecked',
+    modal: true,
+    lawFull: true,                       /* ★審査対応②: 注意喚起文をスクロールなしで全文表示 */
+    /* LP側の同意チェックをデフォルトOFFにする場合は必ず↓を有効化
+    agree: 'unchecked',
+    */
   },
-  /* 冒頭の定期コース案内の文言を変えたい時はここで上書き（push不要・このLPだけ）
-  greeting: '【定期コースのご案内】\n・2回目以降の決済金額：11,440円（税込・送料無料）\n　※通常価格14,300円の20%OFF\n・お届けサイクル：前回発送後、選択したサイクル（30日・45日・60日）または指定日にお届け\n・解約について：次回配送予定日の10日前までにマイページにてお手続きください',
-  */
+  cardCvv: false,                        /* セキュリティコードを聞かない */
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（別送：コンビニ後払い）',
+  },
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
 };
 </script>
 <script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=23" defer></script>
