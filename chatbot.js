@@ -1,5 +1,8 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.27.0
+    HugSkin 獲得チャットボット v3.27.1
+    (v3.27.1: msgステップに style:'fine'(注記スタイル=ブランド色塗り+
+     小さめ文字)を追加し、formplus_npの定期条件案内に適用。
+     既存シナリオのmsgステップは無指定=従来の白吹き出しのまま)
     (v3.27.0: NP後払い審査対応。①別名シナリオ formplus_np を追加
      (formplusと同一フロー+冒頭に定期コース条件の案内msg。既存シナリオ無変更)
      ②確認画面の注意喚起文(qa-caution転記)を全文表示にする
@@ -373,7 +376,7 @@ SCENARIOS.formplus = [
    ・冒頭画像はタグの opening.image で設定
    ・案内文は key:'greet' なのでタグの greeting で上書き可(金額改定時はタグだけで直せる) */
 SCENARIOS.formplus_np = SCENARIOS.formplus.slice(0, 2).concat([
-  { type: 'msg', key: 'greet',
+  { type: 'msg', key: 'greet', style: 'fine',
     msg: '【定期コースのご案内】\n'
       + '・2回目以降の決済金額：11,440円（税込・送料無料）\n'
       + '　※通常価格14,300円の20%OFF\n'
@@ -577,6 +580,9 @@ var CSS = ''
 + '.bb{max-width:80%;padding:9px 13px;line-height:1.6;font-size:13.5px;word-break:break-word;white-space:pre-wrap}'
 + '.bb.bot{background:#fff;color:#3a2a30;border-radius:3px 12px 12px 12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}'
 + '.bb.user{background:' + CFG.theme.brand + ';color:#fff;border-radius:12px 3px 12px 12px}'
+/* 注記スタイルの発話(msgステップに style:'fine')。ブランド色ベタ塗り+小さめ文字で
+   控えめに見せる(formplus_npの定期条件案内用。他社botの注記表現に寄せた見た目) */
++ '.bb.fine{background:' + CFG.theme.brand + ';color:rgba(45,30,36,.82);font-size:10.5px;line-height:1.75;max-width:88%}'
 + '.row.user.editable{cursor:pointer}'
 + '.ub-ed{color:' + CFG.theme.brand + ';font-size:12px;opacity:.6;margin-bottom:4px;flex-shrink:0}'
 + '.bb img{max-width:100%;border-radius:8px;display:block}'
@@ -875,10 +881,11 @@ function avHtml(cls) {
     ? '<div class="' + cls + '"><img src="' + esc(CFG.avatar) + '" alt=""></div>'
     : '<div class="' + cls + '">💬</div>';
 }
-function botBubble(text) {
+function botBubble(text, cls) {
+  /* cls: 追加クラス(任意)。'fine'=注記スタイル(小さめ文字+ブランド色塗り) */
   var row = document.createElement('div');
   row.className = 'row';
-  row.innerHTML = avHtml('av') + '<div class="bb bot">' + esc(tpl(text)).replace(/\n/g, '<br>') + '</div>';
+  row.innerHTML = avHtml('av') + '<div class="bb bot' + (cls ? ' ' + cls : '') + '">' + esc(tpl(text)).replace(/\n/g, '<br>') + '</div>';
   msgsEl.appendChild(row); scrollBottom();
 }
 /* editKey を渡すと、その回答バブルはタップで「その質問だけ修正」できる */
@@ -1077,8 +1084,10 @@ async function runStepInner(i) {
   }
   if (s.type === 'msg') {
     var t0 = typing(); await delay(CFG.typingMs); t0.remove();
-    /* 挨拶(key:'greet')はタグの greeting 設定で上書きできる */
-    botBubble(s.key === 'greet' && CFG.greeting ? CFG.greeting : s.msg);
+    /* 挨拶(key:'greet')はタグの greeting 設定で上書きできる。
+       style:'fine' のステップは注記スタイル(小さめ文字+ブランド色塗り)で表示 */
+    botBubble(s.key === 'greet' && CFG.greeting ? CFG.greeting : s.msg,
+      s.style === 'fine' ? 'fine' : '');
     return runStep(i + 1);
   }
   /* カードステップは支払いがクレジット系の時だけ表示 */
