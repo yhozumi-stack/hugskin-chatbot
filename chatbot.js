@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.26.1
+    HugSkin 獲得チャットボット v3.27.0
+    (v3.27.0: NP後払い審査対応。①別名シナリオ formplus_np を追加
+     (formplusと同一フロー+冒頭に定期コース条件の案内msg。既存シナリオ無変更)
+     ②確認画面の注意喚起文(qa-caution転記)を全文表示にする
+     summaryOptions.lawFull を追加(既定OFF=従来どおり150pxスクロール)。
+     どちらもタグで指定したLPだけ有効=既存LPは1ミリも変わらない)
     (v3.26.1: codNoticeImage を追加(既定OFF)。後払い選択直後に訴求バナー
      画像(NP後払いwiz等)を出せる。Befas方式=バナーだけにしたい時は
      codNoticeImage を設定して codNotice: '' にする)
@@ -101,6 +106,7 @@ var DEFAULTS = {
   paymentFallback: null,
   /* 確認画面のタグ調整(すべて任意。未指定なら現状の既定動作)
      例: summaryOptions: { submitLabel: '注文する →', showLaw: false, showOrderInfo: true, msg: '最終確認です' }
+     lawFull: true … 注意喚起文(qa-caution転記)をスクロールなしで全文表示(NP審査対応。既定はfalse=150pxで内部スクロール)
      同意チェックボックス関連:
        agree: true(既定=表示・チェック済) / 'unchecked'(表示・未チェックで開始) / false(非表示)
        agreeText: 同意文言の変更
@@ -360,6 +366,21 @@ SCENARIOS.formplus = [
     submitLabel: 'この内容で注文を確定する →' },
 ];
 
+/* NP後払い審査用シナリオ(v3.27.0新設)。formplusと同一フローの冒頭に
+   定期コース条件の案内(2回目以降の金額・お届けサイクル・解約条件)を挟む。
+   member_ask と同じ「既存シナリオのステップを共有して組む」方式=formplus本体は無変更。
+   使うLPのタグで scenario: 'formplus_np' を指定(タグ未指定の既存LPには無影響)。
+   ・冒頭画像はタグの opening.image で設定
+   ・案内文は key:'greet' なのでタグの greeting で上書き可(金額改定時はタグだけで直せる) */
+SCENARIOS.formplus_np = SCENARIOS.formplus.slice(0, 2).concat([
+  { type: 'msg', key: 'greet',
+    msg: '【定期コースのご案内】\n'
+      + '・2回目以降の決済金額：11,440円（税込・送料無料）\n'
+      + '　※通常価格14,300円の20%OFF\n'
+      + '・お届けサイクル：前回発送後、選択したサイクル（30日・45日・60日）または指定日にお届け\n'
+      + '・解約について：次回配送予定日の10日前までにマイページにてお手続きください' },
+], SCENARIOS.formplus.slice(2));
+
 /* 確認画面などで使う項目名 */
 var LABELS = {
   name_full: 'お名前', kana_full: 'フリガナ',
@@ -607,6 +628,8 @@ var CSS = ''
 + '.sum tr.ro td{background:#fbf7f9;font-weight:600}'
 + '.sum tr.tot td{font-weight:700;font-size:13.5px;color:#3a2a30}'
 + '.law{font-size:10.5px;color:#8a7a80;line-height:1.6;padding:10px 12px;border-top:.5px solid rgba(0,0,0,.06);background:#fdfbfc;max-height:150px;overflow-y:auto}'
+/* summaryOptions.lawFull 用: 注意喚起文をスクロールなしで全文表示(NP審査対応・既定OFF) */
++ '.law.law-full{max-height:none;overflow-y:visible}'
 + '.sum tr[data-k]{cursor:pointer}'
 + '.sum tr[data-k]:active td{background:#faf3f6}'
 + '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
@@ -1916,8 +1939,9 @@ async function renderSummary(s) {
   card.className = 'sum';
   card.innerHTML = '<table>' + rows + '</table>'
     /* 特商法・定期条件の注意喚起(ecforceのqa-cautionを転記。最終確認画面の表示義務対応。
-       タグで summaryOptions: { showLaw: false } にすると非表示にできる) */
-    + (os && os.caution && so.showLaw !== false ? '<div class="law">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
+       タグで summaryOptions: { showLaw: false } にすると非表示にできる。
+       summaryOptions: { lawFull: true } でスクロールなしの全文表示(NP審査対応) */
+    + (os && os.caution && so.showLaw !== false ? '<div class="law' + (so.lawFull ? ' law-full' : '') + '">' + esc(os.caution).replace(/\n/g, '<br>') + '</div>' : '')
     + agreeHtml
     + '<button class="go">' + esc(so.submitLabel || s.submitLabel || '注文フォームへ進む →') + '</button>';
 

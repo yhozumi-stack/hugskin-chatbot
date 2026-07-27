@@ -148,10 +148,15 @@ window.HS_CHAT = {
   ecforceOrderUrl: './orders_new_mock.html',
 };
 /* URLで試すシナリオを切替できる(別名シナリオの動作確認用)。
-   例: http://localhost:8940/preview/?scenario=formplus_b */
+   例: http://localhost:8940/preview/?scenario=formplus_b
+   追加パラメータ(NP審査対応 v3.27.0 のテスト用):
+     &lawfull … 確認画面の注意喚起文を全文表示(summaryOptions.lawFull)
+     &openimg … 冒頭画像を表示(opening.image に手持ち画像をセット) */
 (function () {
   var m = location.search.match(/[?&]scenario=(\w+)/);
   if (m) window.HS_CHAT.scenario = m[1];
+  if (/[?&]lawfull/.test(location.search)) window.HS_CHAT.summaryOptions = { lawFull: true };
+  if (/[?&]openimg/.test(location.search)) window.HS_CHAT.opening.image = '../img/chat_fv2_2980.jpeg';
 })();
 </script>
 <script src="../chatbot.js" defer></script>

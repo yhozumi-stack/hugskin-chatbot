@@ -1,0 +1,49 @@
+<!-- ============================================================
+  HugSkin 獲得チャットボット NP後払い審査用タグ（正本・v3.27.0〜）
+  ------------------------------------------------------------
+  NP（ネットプロテクションズ）の加盟店審査に向けたLP用。
+  ecforce 管理画面 > タグ管理 でこのタグを登録し、審査用LPに適用する。
+  既存LPのタグは一切触らない（このタグを貼ったLPだけで有効）。
+
+  ▼ 通常タグとの違い（審査対応の3点）
+    ① scenario: 'formplus_np'
+       … 冒頭（最初の入力の前）に定期コース条件の案内を表示
+         （2回目以降の決済金額 / お届けサイクル / 解約条件）。
+         文言を変えたい時は下の greeting の上書き例を使う（push不要）
+    ② opening.image
+       … 冒頭画像。審査用のビジュアルURLを設定する（空なら画像なし）
+    ③ summaryOptions.lawFull: true
+       … 確認画面の注意喚起文（ecforceのqa-caution転記）を
+         スクロールなしで全文表示（既定は150pxで内部スクロール）
+
+  ▼ 配信URL: https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus_np',
+  cardCvv: false,   /* ZEUSがセキュリティコード不要設定のため、隠れCVV欄があっても聞かない・転記しない */
+  vars: {
+    PRODUCT: 'HugSkin C10 ALL IN SERUM',
+    PRICE:   '初回限定 2,980円（税込）',   /* 審査用LPのオファーに合わせて変更 */
+    OFFER:   '初回限定',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  opening: {
+    image: '',              /* ★冒頭画像URLをここに設定（例: https://yhozumi-stack.github.io/hugskin-chatbot/img/np_opening.png） */
+    stockCheck: true,
+    stockGifUrl: '',
+  },
+  summaryOptions: {
+    lawFull: true,          /* 確認画面の注意喚起文をスクロールなしで全文表示（NP審査対応） */
+    /* 同意チェックを「未チェックで開始」にしたい場合は下の1行を有効化
+       （お客様が自分でチェックしないと確定ボタンが押せなくなる。
+        チェック後の同意はLPフォーム側の同意チェックにも自動反映される） */
+    // agree: 'unchecked',
+  },
+  /* 冒頭の定期コース案内の文言を変えたい時はここで上書き（push不要・このLPだけ）
+  greeting: '【定期コースのご案内】\n・2回目以降の決済金額：11,440円（税込・送料無料）\n　※通常価格14,300円の20%OFF\n・お届けサイクル：前回発送後、選択したサイクル（30日・45日・60日）または指定日にお届け\n・解約について：次回配送予定日の10日前までにマイページにてお手続きください',
+  */
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=23" defer></script>

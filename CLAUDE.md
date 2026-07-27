@@ -281,6 +281,16 @@ paymentFallback: {},   // 最小はこれだけでON。文言を変えたい時�
 - 文言の注意: 既定文言は「審査」に触れないぼかし表現にしてある(NP等の決済会社の規約対策)。「与信審査が通りませんでした」と明言したい場合はタグの`msg`で上書き
 - 動作確認: `preview/payment_ng_test.html`(ページ上部にテストモード一覧。`?ng=1`=PW再質問 / `&skip=1`=skip再生成 / `&nopw=1`=PW欄なし / `&held=1`=引き継ぎ / `&pm=21`=非発動 / `&off=1`=既定OFF / パラメータ無し=チャット完走→弾き返しの一気通貫テスト)
 
+### レシピ19: NP後払い審査用チャットボット(formplus_np・v3.27.0〜)
+NP(ネットプロテクションズ)の加盟店審査に向けたLP用の3点セット。**審査用LPのタグだけで有効=既存LPは無影響**。
+タグの正本: `tags/ecforce_tag_np_shinsa.html`
+1. **冒頭の定期コース条件案内**: `scenario: 'formplus_np'` を指定。formplusと同一フローの冒頭(最初の入力の前)に
+   「2回目以降11,440円(税込・送料無料)/お届けサイクル(30・45・60日または指定日)/解約は次回配送予定日の10日前まで」の案内msgが入る。
+   案内は `key:'greet'` なので**金額改定時はタグの `greeting` で上書きするだけ**(push不要)。冒頭画像はタグの `opening.image`
+2. **確認画面の注意喚起文を全文表示**: `summaryOptions: { lawFull: true }`。qa-caution転記の150px内部スクロールを解除して全文を出す(既定OFF=従来どおり)
+3. **同意チェックを未チェック開始に**(必要なら): `summaryOptions: { agree: 'unchecked' }`(既存機能。お客様がチェックするまで確定ボタン無効。チェック後はLPフォームの同意チェックにも自動反映)
+- preview確認: `http://localhost:8940/preview/?scenario=formplus_np&lawfull&openimg`(&lawfull=全文表示 / &openimg=冒頭画像のテスト表示)
+
 ### レシピ7: 動作確認(変更したら必ずやる)
 ```bash
 cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
