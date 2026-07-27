@@ -375,14 +375,15 @@ SCENARIOS.formplus = [
    使うLPのタグで scenario: 'formplus_np' を指定(タグ未指定の既存LPには無影響)。
    ・冒頭画像はタグの opening.image で設定
    ・案内文は key:'greet' なのでタグの greeting で上書き可(金額改定時はタグだけで直せる) */
-SCENARIOS.formplus_np = SCENARIOS.formplus.slice(0, 2).concat([
+SCENARIOS.formplus_np = SCENARIOS.formplus.slice(0, 1).concat([
+  /* 案内はローディング演出(stock)と冒頭画像の間に表示(2026-07-27 保積さん指定の並び) */
   { type: 'msg', key: 'greet', style: 'fine',
     msg: '【定期コースのご案内】\n'
       + '・2回目以降の決済金額：11,440円（税込・送料無料）\n'
       + '　※通常価格14,300円の20%OFF\n'
       + '・お届けサイクル：前回発送後、選択したサイクル（30日・45日・60日）または指定日にお届け\n'
       + '・解約について：次回配送予定日の10日前までにマイページにてお手続きください' },
-], SCENARIOS.formplus.slice(2));
+], SCENARIOS.formplus.slice(1));
 
 /* 確認画面などで使う項目名 */
 var LABELS = {
