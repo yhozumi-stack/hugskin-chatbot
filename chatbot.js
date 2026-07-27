@@ -390,6 +390,12 @@ SCENARIOS.formplus_np = SCENARIOS.formplus.slice(0, 1).concat([
       + '・解約について：次回配送予定日の10日前までにマイページにてお手続きください' },
 ], SCENARIOS.formplus.slice(1));
 
+/* formplus_np の並び違い版: 定期条件の案内を「冒頭画像の後」に出す
+   (formplus_np = ローディング演出→案内→画像 / formplus_np2 = ローディング演出→画像→案内)。
+   案内ステップは formplus_np と同一オブジェクトを共有(文言・スタイルは常に同じ) */
+SCENARIOS.formplus_np2 = SCENARIOS.formplus.slice(0, 2)
+  .concat([SCENARIOS.formplus_np[1]], SCENARIOS.formplus.slice(2));
+
 /* 確認画面などで使う項目名 */
 var LABELS = {
   name_full: 'お名前', kana_full: 'フリガナ',
