@@ -1,5 +1,8 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.27.2
+    HugSkin 獲得チャットボット v3.27.3
+    (v3.27.3: summaryOptions.qaWait:false を追加(既定は従来どおり待つ)。
+     qa-*テーブルを出さないLPテーマで確認画面表示が毎回4.5秒待ちになるのを
+     スキップして即表示できる)
     (v3.27.2: summaryOptions.lawText を追加(既定OFF)。「利用規約チェック後に
      しかqa-cautionを表示しない」LPテーマで確認画面の注意喚起文が空になる
      問題のフォールバック。qa-cautionが読めた時は従来どおりそちら優先)
@@ -115,6 +118,8 @@ var DEFAULTS = {
      lawFull: true … 注意喚起文(qa-caution転記)をスクロールなしで全文表示(NP審査対応。既定はfalse=150pxで内部スクロール)
      lawText: '…' … 注意喚起文のフォールバック文言。LPのqa-cautionが読めない時(利用規約チェック後にしか
                      表示しないLPテーマ等)だけ使われる。qa-cautionが読めた時はそちら優先
+     qaWait: false … 確認画面前の「ecforce再計算(qa-total)待ち」最大4.5秒をスキップして即表示。
+                     qa-*を出さないLPテーマで毎回4.5秒待ちになるのを防ぐ(lawTextとセット推奨)
      同意チェックボックス関連:
        agree: true(既定=表示・チェック済) / 'unchecked'(表示・未チェックで開始) / false(非表示)
        agreeText: 同意文言の変更
@@ -1899,13 +1904,18 @@ async function renderSummary(s) {
     var t = typing();
     try { resolveSkips(); fillLocalForm(localForm); prefilled = true; } catch (e) {}
     /* ecforceのAJAX再計算を待つ。qa-totalが描画されるまで最大4.5秒ポーリングし、
-       その間ecforceの再描画で支払いセレクトが初期値に戻されていたら黙って直す */
-    var waited = 0;
-    while (waited < 4500) {
-      await delay(400); waited += 400;
-      var selP = localForm.querySelector('[name="order[payment_attributes][payment_method_id]"]');
-      if (selP && answers.payment && selP.value !== answers.payment) selP.value = answers.payment;
-      if (qaText('total')) break;
+       その間ecforceの再描画で支払いセレクトが初期値に戻されていたら黙って直す。
+       タグで summaryOptions: { qaWait: false } にすると待ちをスキップして即表示
+       (qa-*を出さない/出すのが遅いLPテーマ向け。注文内容ブロックは出なくなるので
+        lawText とセットで使う。転記値の最終再固定は送信直前に別途行われるので安全) */
+    if (so.qaWait !== false) {
+      var waited = 0;
+      while (waited < 4500) {
+        await delay(400); waited += 400;
+        var selP = localForm.querySelector('[name="order[payment_attributes][payment_method_id]"]');
+        if (selP && answers.payment && selP.value !== answers.payment) selP.value = answers.payment;
+        if (qaText('total')) break;
+      }
     }
     t.remove();
   }
