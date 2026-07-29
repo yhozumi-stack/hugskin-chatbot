@@ -293,6 +293,20 @@ NP(ネットプロテクションズ)の加盟店審査に向けたLP用の3点�
 3. **同意チェックを未チェック開始に**(必要なら): `summaryOptions: { agree: 'unchecked' }`(既存機能。お客様がチェックするまで確定ボタン無効。チェック後はLPフォームの同意チェックにも自動反映)
 - preview確認: `http://localhost:8940/preview/?scenario=formplus_np&lawfull&openimg`(&lawfull=全文表示 / &openimg=冒頭画像のテスト表示)
 
+### レシピ20: 入力ミス検知(inputChecks・v3.28.0〜・LP個別・push不要)
+住所・電話・メールの入力ミスを検知する機能一式。**既定OFF**=タグに書いたLPだけ有効。
+2026-07-29のベリトランス与信NG実データ27件を根拠に設計(NG群13件中4件を検知・成功注文13件で誤検知ゼロ)。
+```js
+inputChecks: {},   // 最小はこれだけで全部ON
+fieldNotes: { addr2: 'アパート・マンションの方は建物名と部屋番号まで正確にご入力ください' },  // 併用推奨(ベリトランス提案)
+```
+- 中身: ①桁数ガード(郵便番号7桁/電話11桁を超えて打てない。ハイフン入力は許容) ②電話バリデーション強化(070/080/090/050は11桁必須=**これだけエラーで弾く**。固定電話10桁はOK) ③ソフト警告=番地に数字なし/電話ダミー番号疑い/メールドメインtypo ④住所確認(「お届け先を確認しています…」演出付きで郵便番号APIと照合。API不通時は警告しない) ⑤住所の表記正規化(数字に挟まれた長音符→半角ハイフン。カタカナ語の長音符は不変)
+- **ソフト警告は弾かない**: 警告後、同じ内容のままもう一度「次へ」で通る(正当な入力を機会損失にしないため)
+- 個別OFF: `inputChecks: { email: false }` のように項目名にfalse(banchi/tel/email/maxlen/addr/telLen/addrNorm)
+- 計測: 警告表示は `hs_chat_soft_warn_addr` / `hs_chat_soft_warn_contact` 等で自動計測(既存パイプラインに乗る)
+- 本番タグの完成形: `tags/入力チェック対応_1〜3_*.html`(離脱確認なし/安心訴求/お得訴求の3パターン)
+- 動作確認: `preview/np_test.html`(チェックリスト付き。`?legacy`=OFF比較) / `preview/?scenario=formplus_np2&checks`
+
 ### レシピ7: 動作確認(変更したら必ずやる)
 ```bash
 cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
