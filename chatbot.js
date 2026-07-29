@@ -1,5 +1,8 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.28.0
+    HugSkin 獲得チャットボット v3.28.1
+    (v3.28.1: 確認画面の注意喚起文で **〜** 囲みを太字+濃色で表示。
+     NP審査の「定期契約部分が小さく薄くて視認しづらい」指摘への対応。
+     lawText に ** を書いたLPだけで発動=既存LP無影響)
     (v3.28.0: 入力ミスの検知 inputChecks を追加(既定OFF)。
      ①桁数ガード(郵便番号7桁/電話11桁を超えて打てない)
      ②ソフト警告=番地に数字なし/電話のダミー番号疑い/メールドメインtypo
@@ -702,6 +705,8 @@ var CSS = ''
 + '.law{font-size:10.5px;color:#8a7a80;line-height:1.6;padding:10px 12px;border-top:.5px solid rgba(0,0,0,.06);background:#fdfbfc;max-height:150px;overflow-y:auto}'
 /* summaryOptions.lawFull 用: 注意喚起文をスクロールなしで全文表示(NP審査対応・既定OFF) */
 + '.law.law-full{max-height:none;overflow-y:visible}'
+/* lawText内の **〜** 強調(太字+濃色。NP審査「小さく薄くて視認しづらい」指摘への対応) */
++ '.law b{color:#3a2a30;font-weight:700}'
 + '.sum tr[data-k]{cursor:pointer}'
 + '.sum tr[data-k]:active td{background:#faf3f6}'
 + '.sum td.ed{color:' + CFG.theme.brand + ';width:28px;text-align:center;font-size:13px}'
@@ -2227,7 +2232,9 @@ async function renderSummary(s) {
        (qa-cautionが読めた時はそちら優先=オファー変更に自動追従) */
     + (function () {
         var lawTxt = (os && os.caution) || so.lawText || '';
-        return lawTxt && so.showLaw !== false ? '<div class="law' + (so.lawFull ? ' law-full' : '') + '">' + esc(lawTxt).replace(/\n/g, '<br>') + '</div>' : '';
+        /* **〜** で囲んだ部分は太字+濃色で強調(v3.28.1・NP審査の視認性指摘対応)。
+           囲み記法なので lawText に **を書いたLPだけで発動(qa-caution転記には ** は含まれない) */
+        return lawTxt && so.showLaw !== false ? '<div class="law' + (so.lawFull ? ' law-full' : '') + '">' + esc(lawTxt).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>') + '</div>' : '';
       })()
     + agreeHtml
     + '<button class="go">' + esc(so.submitLabel || s.submitLabel || '注文フォームへ進む →') + '</button>';
