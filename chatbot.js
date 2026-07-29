@@ -1,5 +1,12 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.27.3
+    HugSkin 獲得チャットボット v3.28.0
+    (v3.28.0: 入力ミスの検知 inputChecks を追加(既定OFF)。
+     ①桁数ガード(郵便番号7桁/電話11桁を超えて打てない)
+     ②ソフト警告=番地に数字なし/電話のダミー番号疑い/メールドメインtypo
+     ③住所確認=「お届け先を確認しています…」の演出付きで郵便番号APIと
+       入力住所を突き合わせ、実在しない郵便番号・住所の食い違いを検出
+     ②③は警告のみで弾かない(同じ内容で再度「次へ」を押せば進む)。
+     タグで inputChecks: {} を書いたLPだけ有効)
     (v3.27.3: summaryOptions.qaWait:false を追加(既定は従来どおり待つ)。
      qa-*テーブルを出さないLPテーマで確認画面表示が毎回4.5秒待ちになるのを
      スキップして即表示できる)
@@ -129,6 +136,23 @@ var DEFAULTS = {
   agreeLink: 'https://hugskin.shop/info/customer_term',
   /* 入力欄の下に出す注意書き(キー=項目key)。シナリオ側のnoteより優先 */
   fieldNotes: {},
+  /* 入力ミスのソフト警告(v3.28.0〜・既定OFF)。タグで inputChecks: {} を書いたLPだけ有効。
+     エラーと違い「弾かない」: 警告を1回出すだけで、同じ内容のままもう一度「次へ」を
+     押せばそのまま進める(正当な入力を機会損失にしないため)。
+       banchi: 「番地・建物」に数字が無い(番地の入れ忘れ疑い。住所不備・与信落ちの最頻出)
+       tel:    同じ数字の連続・連番のダミー番号疑い
+       email:  ドメインのtypo疑い(gmial.com→gmail.com等。修正候補を提示)
+       maxlen: 郵便番号7桁・電話11桁を超えて打てないようにする(既定ON。これだけは警告ではなく入力ガード)
+       addr:   「お届け先を確認しています…」の演出を挟み、郵便番号APIと入力住所を突き合わせる。
+               実在しない郵便番号・郵便番号と住所の食い違いを検出(API不通時は警告しない)
+       telLen: 070/080/090/050 は11桁必須にする(10桁の携帯番号は存在しない=与信・SMSが必ず失敗)。
+               これは警告ではなくエラー(直さないと進めない)。既定ON
+       addrNorm: 住所欄の表記を正規化(全角数字→半角、数字に挟まれた長音符→半角ハイフン)。既定ON
+     個別にOFFにする例: inputChecks: { email: false }(それ以外は有効)
+     ※ここの検知内容は2026-07-29のベリトランス与信NG実データ(14件)を根拠に決めている */
+  inputChecks: null,
+  /* 住所確認中の演出の文言(inputChecks.addr が有効な時) */
+  addrCheckText: 'お届け先を確認しています…',
   /* 文言ルール: {{VAR}} を含む行は、その変数が未設定なら行ごと非表示になる。
      例: 「ただいま{{PRICE}}でご案内中です」は PRICE 未設定なら丸ごと消える */
   skip: {},                        // 質問せず転記だけする項目（LPごとにタグで設定）
@@ -433,6 +457,17 @@ var NORMS = {
   nameSpace: function (v) { // 氏名のスペースを半角1個に正規化
     return v.replace(/[\s　]+/g, ' ').trim();
   },
+  /* 住所の正規化(inputChecks有効時のみ適用)。全角数字→半角と、
+     「数字に挟まれた長音符・全角ダッシュ」だけを半角ハイフンに直す。
+     ⚠️長音符の一括変換は絶対にしない(「コーポ」「パークタワー」等の
+       正当なカタカナ語を「コ-ポ」に壊してしまうため)。
+     2026-07-29のベリトランス与信NG実データで「1丁目5ー26」(U+30FC)を確認 */
+  addr: function (v) {
+    var s = String(v).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    /* 連続する「1ー2ー3」を拾うため2回かける(1回目でマッチが消費されるため) */
+    s = s.replace(/(\d)[ー－―‐−](\d)/g, '$1-$2').replace(/(\d)[ー－―‐−](\d)/g, '$1-$2');
+    return s.replace(/[\s　]+/g, ' ').trim();
+  },
   cardNum: function (v) { return z2h(v).replace(/[-\s]/g, ''); },
   cardName: function (v) { return v.replace(/[\s　]+/g, ' ').trim().toUpperCase(); },
   birth: function (v) {
@@ -446,7 +481,19 @@ var NORMS = {
 var VALIDATORS = {
   required: function (v) { return v.trim() ? null : '入力してください'; },
   email:    function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? null : '正しいメールアドレスを入力してください'; },
-  tel:      function (v) { return /^0\d{9,10}$/.test(v) ? null : '正しい電話番号を入力してください（例：09012345678）'; },
+  tel:      function (v) {
+    if (!/^0\d{9,10}$/.test(v)) return '正しい電話番号を入力してください（例：09012345678）';
+    /* 070/080/090(携帯)・050(IP電話)は11桁固定。10桁の携帯番号は存在しないため
+       後払いの与信・SMSが必ず失敗する(2026-07-29のベリトランス与信NG実データで
+       「080始まりの10桁」を確認)。固定電話(072/075/092等)は10桁なのでここでは弾かない。
+       桁数ガード(maxlen)は「多すぎ」しか防げないので、足りない側はここで見る。
+       inputChecks有効時のみ=既存LPの挙動は変えない */
+    if (CFG.inputChecks && CFG.inputChecks.telLen !== false
+        && /^(070|080|090|050)/.test(v) && v.length !== 11) {
+      return '携帯電話・IP電話の番号は11桁です。桁数をお確かめください';
+    }
+    return null;
+  },
   password: function (v) { return v.length >= 8 ? null : '8文字以上で入力してください'; },
   birth:    function (v) { return /^\d{4}\/\d{2}\/\d{2}$/.test(v) ? null : '例）1990/01/15 の形式で入力してください'; },
   kana:     function (v) { return /^[ァ-ヶー ]+$/.test(v) ? null : 'カタカナで入力してください（例：ヤマダ ハナコ）'; },
@@ -641,6 +688,8 @@ var CSS = ''
 + '.ch:hover{background:' + CFG.theme.brand + ';color:#fff}'
 + '.ch:active{transform:scale(.96)}'
 + '.err{background:#fff5f7;border:.5px solid #f5c0cc;color:#c03050;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-left:36px;animation:hsUp .15s ease both}'
+/* ソフト警告(inputChecks)。エラーの赤と区別できるオレンジ系 */
++ '.err.warn{background:#fff9ec;border-color:#f0d8a8;color:#9a6b1a;white-space:pre-wrap}'
 /* --- 確認カード --- */
 + '.sum{background:#fff;border-radius:12px;border:.5px solid rgba(0,0,0,.1);overflow:hidden;margin-left:36px;box-shadow:0 1px 4px rgba(0,0,0,.07);animation:hsUp .18s ease both}'
 + '.sum table{width:100%;border-collapse:collapse;font-size:12.5px}'
@@ -932,6 +981,139 @@ function showError(msg) {
   el.textContent = '⚠ ' + msg;
   msgsEl.appendChild(el); scrollBottom();
 }
+/* ---------- 入力ミスのソフト警告(CFG.inputChecks・既定OFF) ----------
+   エラー(showError)と違い進行を止めない: 警告を出した後、値を変えずに
+   もう一度「次へ」を押したらそのまま通す(判断はお客様に委ねる) */
+function showWarn(msg) {
+  clearErrors();
+  var el = document.createElement('div');
+  el.className = 'err warn';
+  el.textContent = '💡 ' + msg + '\nこのままでよければ、もう一度「次へ」を押してください';
+  msgsEl.appendChild(el); scrollBottom();
+}
+/* 数字の桁数上限(郵便番号7桁・電話11桁)。「数字の個数」だけを数えるので
+   「150-0001」のようにハイフンを入れる人の入力を途中で切ってしまわない。
+   上限を超えた入力は無視される(打ってもフィールドに入らない) */
+function capDigits(inp, max) {
+  if (!inp || !CFG.inputChecks || CFG.inputChecks.maxlen === false) return;
+  inp.addEventListener('input', function () {
+    var v = z2h(inp.value);
+    if (v.replace(/\D/g, '').length <= max) {
+      if (v !== inp.value) inp.value = v;   // 全角数字は半角に直すだけ
+      return;
+    }
+    var out = '', n = 0;
+    for (var i = 0; i < v.length; i++) {
+      var c = v.charAt(i);
+      if (c >= '0' && c <= '9') { if (n >= max) continue; n++; }
+      out += c;
+    }
+    inp.value = out;
+  });
+}
+/* typo距離判定: 1文字の置換/挿入/削除 or 隣接2文字の入れ替え(gmial→gmail) */
+function nearMiss(a, b) {
+  if (a === b) return false;
+  var la = a.length, lb = b.length;
+  if (la === lb) {
+    var diffs = [];
+    for (var i = 0; i < la; i++) if (a[i] !== b[i]) diffs.push(i);
+    if (diffs.length === 1) return true;                       // 置換1回
+    if (diffs.length === 2 && diffs[1] === diffs[0] + 1        // 隣接入れ替え
+        && a[diffs[0]] === b[diffs[1]] && a[diffs[1]] === b[diffs[0]]) return true;
+    return false;
+  }
+  if (Math.abs(la - lb) !== 1) return false;
+  var s = la < lb ? a : b, l = la < lb ? b : a;                // 挿入/削除1回
+  for (var j = 0; j < s.length; j++) {
+    if (s[j] !== l[j]) return s.slice(j) === l.slice(j + 1);
+  }
+  return true;
+}
+var SOFT_CHECKS = {
+  banchi: function (v) {
+    if (/\d/.test(z2h(v)) || /[一二三四五六七八九十〇]/.test(v)) return null;
+    return '「番地・建物」に数字がありません。番地の入れ忘れはありませんか？（例：1-2-3 ○○マンション201）';
+  },
+  tel: function (v) {
+    return (/(\d)\1{7}$/.test(v) || /(?:01234567|12345678|23456789|98765432|87654321|76543210)/.test(v))
+      ? '電話番号をお確かめください（同じ数字や連番が続いています）' : null;
+  },
+  email: function (v) {
+    var at = v.indexOf('@');
+    if (at < 1) return null;
+    var dom = v.slice(at + 1).toLowerCase();
+    if (MAIL_DOMAINS.indexOf(dom) >= 0) return null;
+    var k;
+    /* ①1文字違い・隣接入れ替え(gmial.com → gmail.com) */
+    for (k = 0; k < MAIL_DOMAINS.length; k++) {
+      if (nearMiss(dom, MAIL_DOMAINS[k])) return 'メールアドレスのドメインは「@' + MAIL_DOMAINS[k] + '」の間違いではありませんか？';
+    }
+    /* ②既知ドメインに余分な文字がくっついている(au.comjp / gmail.com.jp / xgmail.com)。
+       2026-07-29のベリトランス与信NG実データで「au.comjp」(確認メール不達)を確認 */
+    for (k = 0; k < MAIL_DOMAINS.length; k++) {
+      var d = MAIL_DOMAINS[k];
+      if (dom.indexOf(d) === 0 || dom.slice(-d.length) === d) {
+        return 'メールアドレスのドメインは「@' + d + '」の間違いではありませんか？（余分な文字が入っていないかご確認ください）';
+      }
+    }
+    return null;
+  },
+};
+/* 「お届け先を確認しています…」の演出行(枠確保の演出と同じ見た目) */
+function checkingRow(text) {
+  var row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = avHtml('av') + '<div class="stock"><div class="spin"></div><span>' + esc(text) + '</span></div>';
+  msgsEl.appendChild(row); scrollBottom();
+  return row;
+}
+/* 郵便番号→住所の照合用。市区町村は表記ゆれ(空白・「（次のビルを除く）」等)を落として比べる */
+function normCity(s) { return String(s || '').replace(/[\s　]/g, '').replace(/（.*?）|\(.*?\)/g, ''); }
+var zipCache = {};
+function zipLookup(z) {
+  if (zipCache[z]) return Promise.resolve(zipCache[z]);
+  return new Promise(function (resolve) {
+    var done = false;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    function fin(r) { if (done) return; done = true; if (r) zipCache[z] = r; resolve(r); }
+    setTimeout(function () { if (ctrl) { try { ctrl.abort(); } catch (e) {} } fin(null); }, 3000);
+    fetch(CFG.zipApi + z, ctrl ? { signal: ctrl.signal } : undefined)
+      .then(function (res) { return res.json(); })
+      .then(function (j) {
+        fin(j && j.results && j.results[0]
+          ? { pref: j.results[0].address1, city: (j.results[0].address2 || '') + (j.results[0].address3 || '') }
+          : { notFound: true });
+      })
+      .catch(function () { fin(null); });
+  });
+}
+/* 住所の整合チェック(inputChecks.addr)。郵便番号が実在するか・入力住所と食い違わないかを見る。
+   ⚠️APIが不通/タイムアウトの時は警告を出さない(通信事情でお客様を止めない=フェイルオープン) */
+async function addrWarnings(z, pref, city) {
+  if (!CFG.inputChecks || CFG.inputChecks.addr === false || !/^\d{7}$/.test(z)) return [];
+  var r = await zipLookup(z);
+  if (!r) return [];
+  var disp = '〒' + z.slice(0, 3) + '-' + z.slice(3);
+  if (r.notFound) return [disp + ' に該当する住所が見つかりませんでした。郵便番号をお確かめください'];
+  var a = normCity(city), b = normCity(r.city);
+  var prefNg = pref && r.pref && pref !== r.pref;
+  var cityNg = a && b && a.indexOf(b) < 0 && b.indexOf(a) < 0;
+  if (!prefNg && !cityNg) return [];
+  return [disp + ' は「' + r.pref + r.city + '」です。ご入力の「' + (pref || '') + (city || '') + '」とずれていないかお確かめください'];
+}
+function softWarnings(pairs) {
+  var ic = CFG.inputChecks;
+  if (!ic) return [];
+  var out = [];
+  pairs.forEach(function (p) {
+    if (!p.kind || !p.v || ic[p.kind] === false) return;
+    var w = SOFT_CHECKS[p.kind](p.v);
+    if (w) out.push(w);
+  });
+  return out;
+}
+
 function progress() { if (pgFill) pgFill.style.width = (doneCount / totalInput * 100) + '%'; }
 function maybeFocus(el) { if (interacted && el) setTimeout(function () { el.focus(); }, 80); }
 
@@ -1457,7 +1639,15 @@ function renderFields(s, i) {
     if ((f.inputType || '') === 'email') attachEmailSuggest(card.querySelector('#f' + idx));
   });
 
+  /* 郵便番号・電話番号は桁数の上限を超えて打てないようにする(inputChecks有効時) */
+  s.fields.forEach(function (f, idx) {
+    var kind = f.validate || f.norm;
+    if (kind === 'zip') capDigits(card.querySelector('#f' + idx), 7);
+    if (kind === 'tel') capDigits(card.querySelector('#f' + idx), 11);
+  });
+
   var goBtn = card.querySelector('.go');
+  var warnedSig = null;   // ソフト警告を出した時の入力内容(同じ内容で再度「次へ」なら通す)
   goBtn.addEventListener('click', function () {
     clearErrors();
     var vals = [];
@@ -1465,12 +1655,32 @@ function renderFields(s, i) {
       var f = s.fields[idx];
       var v = card.querySelector('#f' + idx).value.trim();
       if (f.norm && NORMS[f.norm]) v = NORMS[f.norm](v);
+      /* 住所欄は表記の正規化をかける(長音符→半角ハイフン等。inputChecks有効時のみ) */
+      else if ((f.key === 'addr1' || f.key === 'addr2')
+               && CFG.inputChecks && CFG.inputChecks.addrNorm !== false) {
+        v = NORMS.addr(v);
+        card.querySelector('#f' + idx).value = v;
+      }
       if (!f.optional || v) {
         var validator = f.validate ? VALIDATORS[f.validate] : null;
         var err = f.optional && !v ? null : (validator ? validator(v) : (v ? null : '入力してください'));
         if (err) { showError(f.label.replace(/（.*/, '') + '：' + err); return; }
       }
       vals.push({ f: f, v: v });
+    }
+    /* ソフト警告(inputChecks・既定OFF)。バリデーション通過後に怪しい入力を1回だけ確認 */
+    var warns = softWarnings(vals.map(function (x) {
+      var kind = x.f.key === 'addr2' ? 'banchi'
+        : x.f.validate === 'tel' ? 'tel'
+        : (x.f.inputType === 'email' || x.f.validate === 'email') ? 'email' : null;
+      return { kind: kind, v: x.v };
+    }));
+    var sig = JSON.stringify(vals.map(function (x) { return x.v; }));
+    if (warns.length && sig !== warnedSig) {
+      warnedSig = sig;
+      track('soft_warn_' + s.key);
+      showWarn(warns.join('\n'));
+      return;
     }
     clearCards();
     var shown = [];
@@ -1605,17 +1815,21 @@ function renderAddress(s, i) {
   card.className = 'card';
   var prefOpts = '<option value="">選択してください</option>';
   PREFS.forEach(function (p) { prefOpts += '<option value="' + p + '">' + p + '</option>'; });
+  /* 入力欄の下の注意書き(タグの fieldNotes。キー= zip / pref / addr1 / addr2 / tel)。
+     未設定ならHTMLは従来と完全に同一(v3.28.0で追加。ベリトランス推奨の入力ミス注意喚起用) */
+  var fn = CFG.fieldNotes || {};
+  function adNote(k) { return fn[k] ? '<div class="fld-note">' + esc(fn[k]) + '</div>' : ''; }
   card.innerHTML =
       '<div class="fld"><label>郵便番号（ハイフン不要）</label>'
     + '<input id="ad-zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例：1500001">'
-    + '<button type="button" class="zip-search">郵便番号から住所を検索</button></div>'
+    + '<button type="button" class="zip-search">郵便番号から住所を検索</button>' + adNote('zip') + '</div>'
     /* ▼住所以下は郵便番号を入れるまで隠しておく(form-plusと同じ段階表示) */
     + '<div id="ad-rest" style="display:none">'
-    + '<div class="fld"><label>都道府県</label><select id="ad-pref" autocomplete="address-level1">' + prefOpts + '</select></div>'
-    + '<div class="fld"><label>市区町村</label><input id="ad-city" type="text" placeholder="例：渋谷区神宮前"></div>'
-    + '<div class="fld"><label>番地・建物名など</label><input id="ad-banchi" type="text" placeholder="例：1-2-3 ハグスキンマンション201"></div>'
+    + '<div class="fld"><label>都道府県</label><select id="ad-pref" autocomplete="address-level1">' + prefOpts + '</select>' + adNote('pref') + '</div>'
+    + '<div class="fld"><label>市区町村</label><input id="ad-city" type="text" placeholder="例：渋谷区神宮前">' + adNote('addr1') + '</div>'
+    + '<div class="fld"><label>番地・建物名など</label><input id="ad-banchi" type="text" placeholder="例：1-2-3 ハグスキンマンション201">' + adNote('addr2') + '</div>'
     + '<div class="fld"><label>電話番号（ハイフン不要）</label>'
-    + '<input id="ad-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="例：09012345678"></div>'
+    + '<input id="ad-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="例：09012345678">' + adNote('tel') + '</div>'
     + '<button class="go">次へ →</button>'
     + '</div>';
   msgsEl.appendChild(card); scrollBottom();
@@ -1625,6 +1839,8 @@ function renderAddress(s, i) {
   var telIn = card.querySelector('#ad-tel');
   var searchBtn = card.querySelector('.zip-search');
   var restEl = card.querySelector('#ad-rest');
+  /* 桁数の上限を超えて打てないようにする(inputChecks有効時) */
+  capDigits(zipIn, 7); capDigits(telIn, 11);
 
   var revealed = false;
   function reveal(focusTarget) {
@@ -1697,8 +1913,16 @@ function renderAddress(s, i) {
     if (/^\d{7}$/.test(z) && z !== autoZip) { autoZip = z; doSearch(); }  // 7桁で自動検索
   });
 
-  card.querySelector('.go').addEventListener('click', function () {
+  var addrWarnedSig = null;   // ソフト警告を出した時の入力内容(同じ内容で再度「次へ」なら通す)
+  var goEl = card.querySelector('.go');
+  goEl.addEventListener('click', async function () {
     clearErrors();
+    /* 住所の表記を直してから判定する(「1丁目5ー26」の長音符→半角ハイフン等)。
+       入力欄の値も直すので、お客様にも直った状態が見える */
+    if (CFG.inputChecks && CFG.inputChecks.addrNorm !== false) {
+      cityIn.value = NORMS.addr(cityIn.value);
+      banchiIn.value = NORMS.addr(banchiIn.value);
+    }
     var z = NORMS.zip(zipIn.value);
     var tel = NORMS.tel(telIn.value);
     var err = VALIDATORS.zip(z)
@@ -1707,6 +1931,31 @@ function renderAddress(s, i) {
       || (!banchiIn.value.trim() ? '番地・建物名を入力してください' : null)
       || (VALIDATORS.tel(tel) ? '電話番号：' + VALIDATORS.tel(tel) : null);
     if (err) { showError(err); return; }
+    /* ソフト警告(inputChecks・既定OFF)。バリデーション通過後に怪しい入力を1回だけ確認 */
+    var sig = z + '|' + prefSel.value + '|' + cityIn.value + '|' + banchiIn.value + '|' + tel;
+    if (sig !== addrWarnedSig) {
+      var warns = softWarnings([
+        { kind: 'banchi', v: banchiIn.value.trim() },
+        { kind: 'tel', v: tel },
+      ]);
+      /* 郵便番号と住所の整合確認(「お届け先を確認しています…」の演出付き) */
+      if (CFG.inputChecks && CFG.inputChecks.addr !== false) {
+        goEl.disabled = true;
+        var chk = checkingRow(CFG.addrCheckText || 'お届け先を確認しています…');
+        var t0 = Date.now();
+        var aw = await addrWarnings(z, prefSel.value, cityIn.value.trim());
+        await delay(Math.max(0, 700 - (Date.now() - t0)));   // 一瞬で消えてチラつくのを防ぐ
+        chk.remove();
+        goEl.disabled = false;
+        warns = warns.concat(aw);
+      }
+      if (warns.length) {
+        addrWarnedSig = sig;
+        track('soft_warn_addr');
+        showWarn(warns.join('\n'));
+        return;
+      }
+    }
     clearCards();
     answers.zip = z;
     answers.pref = prefSel.value;
@@ -1845,6 +2094,7 @@ function renderZip(s, i) {
   var goBtn = card.querySelector('.go');
   var zipIn = card.querySelector('#zipin');
   if (prefill.zip != null) { zipIn.value = prefill.zip; delete prefill.zip; }
+  capDigits(zipIn, 7);   /* 7桁を超えて打てないようにする(inputChecks有効時) */
 
   goBtn.addEventListener('click', async function () {
     clearErrors();

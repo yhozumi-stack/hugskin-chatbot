@@ -1,0 +1,60 @@
+<!-- ============================================================
+  【入力チェック対応版】自社チャット：2980_即チャ_確認画面POPUP_お得訴求
+  ------------------------------------------------------------
+  2026-07-29 更新。元タグ(?v=22・closeConfirm=お得訴求画像)に対する差分は
+  下記2点のみで、シナリオ・画像・離脱確認・支払い表記は一切変更していない。
+
+    ① inputChecks: {}  … 入力ミス検知を有効化（v3.28.0〜）
+       ・電話番号: 070/080/090/050 は11桁必須（不足はエラーで進めない）
+       ・桁数ガード: 郵便番号7桁・電話11桁を超えて打てない
+       ・住所: 数字に挟まれた全角長音符/ダッシュを半角ハイフンへ自動修正
+       ・メール: 主要ドメインとの1文字違い・余分な文字を検知して確認を促す
+       ・お届け先確認: 郵便番号APIと入力住所を突き合わせ、食い違いを警告
+       ※電話の桁数以外は「警告のみ」で注文はブロックしない
+       ※与信NG実データ27件で検証済み（成功注文13件での誤検知ゼロ）
+
+    ② fieldNotes    … 住所欄の下に注意喚起文を表示（ベリトランス提案）
+
+  ⚠️ chatbot.js v3.28.0 以降が配信されていないと inputChecks は無視される
+     （その場合も既存の挙動は一切変わらない＝安全に先貼りできる）
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus',
+  vars: {
+    PRICE: '2,980円（税込）',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',
+  openTriggers: 'a[href="#lp-form"]',
+  launcher: false,
+  countdown: true,
+  summaryOptions: { modal: true },
+  cardCvv: false,
+  inputChecks: {},                       /* ★追加: 入力ミス検知（桁数ガード＋警告＋住所確認） */
+  fieldNotes: {                          /* ★追加: 住所欄の注意喚起（ベリトランス提案） */
+    addr2: 'アパート・マンションの方は建物名と部屋番号まで正確にご入力ください',
+  },
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（別送：コンビニ後払い）',
+  },
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+  closeConfirm: {
+    title: '初回限定チャットを閉じますか？',
+    leaveText: '閉じる',
+    stayText: 'チャットに戻る',
+    image: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/hugskin_chat_close_confirm_offer_680w.webp?v=1',
+  },
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=29" defer></script>

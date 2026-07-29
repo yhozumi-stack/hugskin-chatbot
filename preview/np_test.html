@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】NP審査タグ テスト — 本番タグそのまま + 入力ミス検知</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; margin: 0; color: #333; }
+  .hero { background: linear-gradient(135deg, #f9f1f4, #f0d9e2); padding: 44px 20px; text-align: center; }
+  .hero h1 { color: #a86880; font-size: 26px; margin: 0 0 8px; }
+  section { max-width: 700px; margin: 0 auto; padding: 32px 20px; line-height: 1.9; }
+  .cta { display: inline-block; background: #C8869A; color: #fff; padding: 14px 40px; border-radius: 99px; text-decoration: none; font-weight: 600; }
+  .spacer { height: 50vh; background: repeating-linear-gradient(#fff, #fff 59px, #f5f5f5 60px); display:flex; align-items:center; justify-content:center; color:#bbb; }
+  .guide { background:#fffdf5; border:1px solid #f0e0b8; border-radius:10px; padding:16px 20px; font-size:13.5px; line-height:1.8; }
+  .guide h2 { font-size:15px; margin:0 0 10px; color:#8a6a1a; }
+  .guide table { width:100%; border-collapse:collapse; font-size:13px; margin:8px 0 14px; }
+  .guide th, .guide td { border-bottom:1px solid #eee; padding:6px 8px; text-align:left; vertical-align:top; }
+  .guide th { background:#faf4e4; white-space:nowrap; }
+  .guide code { background:#f4f4f4; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .modes { font-size:12.5px; color:#666; margin-top:10px }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>HugSkin C10 ALL IN SERUM</h1>
+  <p>NP審査タグ（formplus_np2）＋ 入力ミス検知 の動作確認用ページ</p>
+  <a href="#lp-form" class="cta">今すぐ注文する</a>
+</div>
+
+<section>
+  <div class="guide">
+    <h2>🧪 このページで確認できること</h2>
+    <p>実際の <b>NP審査用タグ（本番と同じ設定）</b> を貼った状態です。上のCTAを押すとチャットが開きます。
+       このLPは実LPと同じく「利用規約にチェックするまで注意喚起文（qa-caution）が出ない」テーマを再現しています。</p>
+
+    <b>① 入力ミスのソフト警告（inputChecks・今回の新機能）</b>
+    <table>
+      <tr><th>試す入力</th><th>期待する動き</th></tr>
+      <tr><td>番地欄に <code>ハグスキンマンション</code>（数字なし）</td><td>「番地の入れ忘れは？」とオレンジの警告</td></tr>
+      <tr><td>電話に <code>09000000000</code></td><td>「同じ数字が続いています」と警告</td></tr>
+      <tr><td>メールに <code>hanako@gmial.com</code></td><td>「@gmail.com の間違いでは？」と警告</td></tr>
+      <tr><td><b>警告後、直さずもう一度「次へ」</b></td><td><b>そのまま進む（弾かない）</b></td></tr>
+      <tr><td>番地に <code>1-2-3 ○○マンション201</code></td><td>警告なしで一発通過</td></tr>
+    </table>
+
+    <b>② 桁数の入力ガード（今回の新機能）</b>
+    <table>
+      <tr><th>試す入力</th><th>期待する動き</th></tr>
+      <tr><td>郵便番号に数字を延々と打つ</td><td><b>7桁で止まる</b>（8桁目以降は入らない）</td></tr>
+      <tr><td>郵便番号に <code>150-0001</code></td><td>ハイフン付きでもそのまま入る</td></tr>
+      <tr><td>電話に数字を延々と打つ</td><td><b>11桁で止まる</b></td></tr>
+      <tr><td>電話に <code>090-1234-5678</code></td><td>ハイフン付きでもそのまま入る</td></tr>
+    </table>
+
+    <b>③ 与信NG実データ（2026/06/29〜07/29・14件）で見つかったパターン</b>
+    <table>
+      <tr><th>試す入力</th><th>期待する動き</th></tr>
+      <tr><td>電話に <code>0801234567</code>（080始まりで10桁）</td>
+          <td><b>エラーで進めない</b>「携帯電話・IP電話の番号は11桁です」</td></tr>
+      <tr><td>電話に <code>0311112222</code>（固定電話10桁）</td><td>問題なく通過（固定電話は弾かない）</td></tr>
+      <tr><td>番地に <code>1丁目5ー26コーポ田中301</code>（ハイフンが全角長音符）</td>
+          <td><b>1丁目5-26コーポ田中301</b> に自動修正（「コーポ」の長音符は壊さない）</td></tr>
+      <tr><td>メールに <code>hanako@au.comjp</code></td><td>「@au.com の間違いでは？」と警告</td></tr>
+    </table>
+
+    <b>④ お届け先の確認（今回の新機能）</b>
+    <p style="margin:4px 0">住所ステップで「次へ」を押すと <b>「お届け先を確認しています…」</b> の演出が入り、
+       郵便番号APIと入力住所を突き合わせます（API不通時は警告しません）。</p>
+    <table>
+      <tr><th>試す入力</th><th>期待する動き</th></tr>
+      <tr><td>郵便番号 <code>1500001</code> のまま市区町村を <code>港区南青山</code> に書き換える</td>
+          <td>「〒150-0001 は『東京都渋谷区神宮前』です…」と食い違いを警告</td></tr>
+      <tr><td>郵便番号に <code>9999999</code>（実在しない）</td><td>「該当する住所が見つかりませんでした」と警告</td></tr>
+      <tr><td>正しい住所のまま「次へ」</td><td>演出が出たあと、警告なしで次へ進む</td></tr>
+    </table>
+
+    <b>⑤ NP審査対応（実装済み）</b>
+    <table>
+      <tr><th>確認ポイント</th><th>期待する動き</th></tr>
+      <tr><td>チャット冒頭</td><td>枠確保の演出 → 画像2枚 → <b>ピンクの定期コース案内</b></td></tr>
+      <tr><td>確認画面（支払い選択後）</td><td>すぐ出る（4.5秒待ちなし）／注意喚起文が<b>スクロールなしで全文</b></td></tr>
+      <tr><td>確認画面の規約チェック</td><td><b>未チェックで開始</b>・チェックするまで確定ボタンが押せない</td></tr>
+    </table>
+
+    <div class="modes">
+      URLパラメータ：<code>?legacy</code> ＝ 入力ミス検知をOFFにして既存LPと同じ挙動を確認 ／
+      <code>?qa</code> ＝ 注意喚起文をLP側にも表示（通常LPテーマの再現）
+    </div>
+  </div>
+</section>
+
+<div class="spacer">（スクロール領域）</div>
+
+<!-- ▼▼ 実LP(hugskin.shop/lp)と同じname属性の注文フォームモック ▼▼ -->
+<section id="lp-form">
+  <h2>ご注文フォーム（モック）</h2>
+  <p style="font-size:12px;color:#888">チャット完了時にここへ直接入力される(緑枠=入力成功)。実LPのname属性を再現。</p>
+  <form action="/lp" method="post" onsubmit="return false" style="display:grid;gap:10px;max-width:480px">
+    <table><tr class="input_variant_ec"><td>
+      <p class="form_box_label_ec">商品名 必須</p>
+      <div class="form_group_ec">HugSkin C10 オールインセラム【定期】_0012</div>
+    </td></tr></table>
+    <input type="hidden" name="order[order_items_attributes][][variant_id]" value="23">
+    <input type="hidden" name="order[order_items_attributes][][quantity]" value="1">
+    <label>お名前<input name="order[billing_address_attributes][name01]"></label>
+    <label>フリガナ<input name="order[billing_address_attributes][kana01]"></label>
+    <label>郵便番号<input name="order[billing_address_attributes][zip01]"></label>
+    <label>都道府県
+      <select name="order[billing_address_attributes][prefecture_id]">
+        <option value="">選択してください</option>
+        <option value="1">北海道</option><option value="13">東京都</option>
+        <option value="14">神奈川県</option><option value="27">大阪府</option><option value="47">沖縄県</option>
+      </select>
+    </label>
+    <label>住所1（市郡区／町・村）<input name="order[billing_address_attributes][addr01]"></label>
+    <label>住所2（丁目・番地・マンション名・号室）<input name="order[billing_address_attributes][addr02]"></label>
+    <label>電話番号<input name="order[billing_address_attributes][tel01]"></label>
+    <label>メールアドレス<input type="email" name="order[email]"></label>
+    <label>パスワード<input type="password" name="order[customer_attributes][password]"></label>
+    <label>性別
+      <select name="order[customer_attributes][sex_id]">
+        <option value="">選択してください</option><option value="1">男性</option><option value="2">女性</option>
+      </select>
+    </label>
+    <label>生年月日
+      <select name="order[customer_attributes][birth(1i)]"><option value=""></option><option value="1990">1990</option><option value="1992">1992</option><option value="1995">1995</option></select>
+      <select name="order[customer_attributes][birth(2i)]"><option value=""></option><option value="1">1</option><option value="12">12</option></select>
+      <select name="order[customer_attributes][birth(3i)]"><option value=""></option><option value="15">15</option><option value="31">31</option></select>
+    </label>
+    <label>お支払い方法
+      <select name="order[payment_attributes][payment_method_id]">
+        <option value="">選択してください</option>
+        <option value="21">クレジットカード一括</option>
+        <option value="102">ベリトランス後払い（コンビニ後払い）</option>
+      </select>
+    </label>
+    <label>カード番号<input name="order[payment_attributes][source_attributes][number]" placeholder="例）4111xxxxxxxxxxxx"></label>
+    <label>有効期限(月)
+      <select name="order[payment_attributes][source_attributes][month]">
+        <option value=""></option><option value="1">1</option><option value="4">4</option><option value="9">9</option><option value="12">12</option>
+      </select>
+    </label>
+    <label>有効期限(年・下2桁)
+      <select name="order[payment_attributes][source_attributes][year]">
+        <option value=""></option><option value="26">26</option><option value="27">27</option><option value="28">28</option><option value="30">30</option>
+      </select>
+    </label>
+    <label>カード名義<input name="order[payment_attributes][source_attributes][name]" placeholder="例）HANAKO YAMADA"></label>
+    <label>セキュリティコード<input name="cvv" id="input-cc-cvv" type="password" placeholder="例）123"></label>
+
+    <!-- 注文内容テーブル。実NP審査LPは qa-caution(注意喚起文)を利用規約チェックまで出さないため、
+         このページでも既定では qa-caution を置いていない(?qa を付けると出る) -->
+    <table style="font-size:12px">
+      <tr><td class="qa-product_name">HugSkin C10 オールインセラム【定期】_0012</td>
+          <td class="qa-product_price">2,709円</td><td class="qa-product_quantity">1 個</td></tr>
+      <tr><td>送料 <span class="qa-deliv_fee">0円</span></td>
+          <td>消費税 <span class="qa-tax">271円</span></td>
+          <td>合計 <span class="qa-total">2,980円</span></td></tr>
+    </table>
+    <div id="lp-caution" style="display:none;font-size:11px;color:#888">・初回は「HugSkin C10 ALL IN SERUM」1本を2,980円(税込)でお届けします。
+・2回目以降は20%OFFの11,440円(税込)で30日前後を目安にお届けします。
+・解約は次回発送予定日の10日前までにマイページよりお手続きください。</div>
+    <label style="display:none" id="consent-row">
+      <input type="checkbox" name="order[payment_attributes][source_attributes][consent]" style="width:auto"> 後払い規約に同意する
+    </label>
+    <input type="submit" class="submit_button_complete_ec" value="ご注文手続きへ"
+      onclick="window.__lpSubmitClicked = true; return false;">
+  </form>
+</section>
+
+<script>
+  // 入力されたフィールドを緑枠にする(テスト可視化用)
+  document.addEventListener('input', e => {
+    if (e.target.name && e.target.value) e.target.style.outline = '2px solid #7bc47f';
+  }, true);
+
+  // ?qa … 通常LPテーマの再現(LP側に注意喚起文が最初から出ている状態)
+  if (/[?&]qa/.test(location.search)) {
+    const c = document.getElementById('lp-caution');
+    c.style.display = ''; c.className = 'qa-caution';
+  }
+
+  // 後払い選択で同意チェック欄が出る実LP挙動の模擬
+  document.querySelector('[name="order[payment_attributes][payment_method_id]"]')
+    .addEventListener('change', e => {
+      document.getElementById('consent-row').style.display = e.target.value === '102' ? 'block' : 'none';
+    });
+
+  // 郵便番号の自動補完(実LPの上書き挙動の再現)
+  document.querySelector('[name="order[billing_address_attributes][zip01]"]')
+    .addEventListener('input', () => {
+      setTimeout(() => {
+        document.querySelector('[name="order[billing_address_attributes][addr01]"]').value = '渋谷区神宮前';
+        const a2 = document.querySelector('[name="order[billing_address_attributes][addr02]"]');
+        a2.value = ''; a2.style.outline = '';
+      }, 500);
+    });
+</script>
+
+<!-- ▼▼ ここから下は ecforce タグ管理に貼る「NP審査用タグ(np2版)」そのもの ▼▼ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus_np2',              /* ★審査対応①: 定期コース条件の案内を冒頭画像の「後」に表示 */
+  greeting: '【定期コースのご案内】\n・2回目以降の決済金額は20%OFFの11,440円（税込・送料無料）です。\n・お届けサイクル：前回発送後、選択したサイクル（30日・45日・60日）または指定日にお届けします。\n・解約について：次回配送予定日の10日前までにマイページにてお手続きください。',
+  vars: {
+    PRICE: '2,980円（税込）',
+  },
+  mode: 'float',
+  autoOpen: 'immediate',                 /* ※本番タグは 'manual' + openTriggers。テストしやすいよう即時起動にしてある */
+  openTriggers: 'a[href="#lp-form"]',
+  launcher: false,
+  countdown: true,
+  summaryOptions: {
+    modal: true,
+    lawFull: true,                       /* ★審査対応②: 注意喚起文をスクロールなしで全文表示 */
+    qaWait: false,                       /* ★審査対応④: 再計算待ち(最大4.5秒)をスキップして即表示 */
+    lawText: '・初回は「HugSkin C10 ALL IN SERUM」1本を、通常価格14,300円(税込)から79%OFFの2,980円(税込)でお届けいたします。\n・初回のご注文から原則2〜3日程度でお届けいたします。\n・2回目以降は20%OFFの11,440円(税込)で、前回のお届けから30日前後を目安にお届けいたします（全て送料無料です）。解約のお申し出があるまで定期的にお届けする自動更新コースです。\n・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。\n・代金のご請求は各回の商品発送時に発生いたします。実際のお引き落とし・お支払い時期はご利用のお支払い方法に準じます。\n・解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。\n・ご注文確定後のキャンセルは承れません。詳しくはショッピングガイドのキャンセルについてをご確認ください。\n・お申込み内容（数量やお届け先など）の修正は、前画面に戻り修正してください。',
+    agree: 'unchecked',                  /* 同意チェックを未チェックで開始 */
+  },
+  cardCvv: false,
+  inputChecks: {},                       /* ★今回の新機能: 桁数ガード + 入力ミス検知 + 住所確認 */
+  /* ベリトランス提案の注意喚起文(他社で通過率が改善した事例あり)。
+     電話欄の注記は入力欄のラベルに「ハイフン不要」があり重複するため入れない(2026-07-29) */
+  fieldNotes: {
+    addr2: 'アパート・マンションの方は建物名と部屋番号まで正確にご入力ください',
+  },
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'ベリトランス後払い（別送：コンビニ後払い）',
+  },
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+  /* プレビューでは転記先をモック注文フォームに向ける(本番タグには不要) */
+  ecforceOrderUrl: './orders_new_mock.html',
+};
+/* ?legacy … 入力ミス検知をOFF(＝既存LPと同じ挙動)にして比較できる */
+if (/[?&]legacy/.test(location.search)) delete window.HS_CHAT.inputChecks;
+</script>
+<script src="../chatbot.js" defer></script>
+<!-- ▲▲ ここまで ▲▲ -->
+
+</body>
+</html>
