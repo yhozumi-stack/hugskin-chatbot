@@ -35,6 +35,8 @@ jobs:
         env:
           GA4_PROPERTY_ID: ${{ vars.GA4_PROPERTY_ID }}
           SHEET_ID: ${{ vars.SHEET_ID }}
+      # 2026-07-31〜 variant_daily は蓄積型(マージ)。窓(60)を狭めても過去分は消えず、
+      # 縮小を検知したら書き込まずに exit 1 する(→下の if: failure() でSlackへ)。
       - name: バリアント別サマリ(新タブ variant_*)
         run: python analytics/pull_variants.py 60
         env:
