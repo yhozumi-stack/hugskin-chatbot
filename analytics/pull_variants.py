@@ -69,11 +69,15 @@ def get_client():
 DAILY_SHEET = "variant_daily"
 DAILY_HEADER = ["date", "variant", "scenario", "metric", "sessions", "users"]
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-# 既存 variant_dashboard の SUMPRODUCT 参照範囲は A2:A5569。蓄積型では行が増え続けるので、
-# ここを超えると「集計が黙って欠ける」。超える前に警告を出す(サイレントを作らない)。
-DASH_REF_ROWS = 5568
-DASH_WARN_ROWS = 4400
-# 新規作成/--reset-dashboard で作り直す時の参照範囲(蓄積型に合わせて広く取る)
+# ⛔ 行数の天井は作らない(2026-07-31)。
+#   かつて variant_dashboard の SUMPRODUCT は A2:A5782 のような**行番号付きの固定範囲**だった。
+#   蓄積型(マージ)に変えて行が増え続けるようになった結果、上限を超えた日から
+#   「新しい行だけが集計に入らない・エラーも出ない」というサイレント破壊が起きる状態だった
+#   (実測: 870行/1日約57行増 → 2026年10月下旬に到達する見込みだった)。
+#   → 数式を **A2:A の開放形**(終端行を書かない)に直して天井そのものを撤廃した。
+#      同シートの `ダッシュボード` タブが元から採用していた書き方に揃えた形。
+#   新規作成時も開放形で作るので、行数ハードコード(DASH_REF_ROWS/DASH_WARN_ROWS)は廃止。
+#   グリッド行数だけは初期確保が要る(データが増えれば Google 側が自動拡張する)。
 DASH_NEW_ROWS = 20000
 
 CHANGELOG_SHEET = "変更ログ"
@@ -267,10 +271,10 @@ def ensure_dashboard(sh, existing):
     today = datetime.now(timezone(timedelta(hours=9))).date()
     start = (today - timedelta(days=14)).isoformat()
     D = DAILY_SHEET  # 参照先。列: A=date B=variant C=scenario D=metric E=sessions
-    # variant_daily は蓄積型で行が増え続けるので、参照範囲は広めに取る(狭いと黙って欠ける)
-    N = DASH_NEW_ROWS
-    Ad, Bd = f"{D}!$A$2:$A${N}", f"{D}!$B$2:$B${N}"
-    Cd, Dd, Ed = f"{D}!$C$2:$C${N}", f"{D}!$D$2:$D${N}", f"{D}!$E$2:$E${N}"
+    # ⛔ 終端行を書かない開放形(A2:A)。variant_daily は蓄積型で行が増え続けるため、
+    #    行番号で閉じると超えた日から「新しい行だけ黙って集計に入らない」事故になる(2026-07-31 修正)。
+    Ad, Bd = f"{D}!$A$2:$A", f"{D}!$B$2:$B"
+    Cd, Dd, Ed = f"{D}!$C$2:$C", f"{D}!$D$2:$D", f"{D}!$E$2:$E"
     # 制御セル: B1=開始 D1=終了 / B2=バリアント / B3=シナリオ。ヘッダ=5行目、ファネル=6行目〜
     vals = [
         ["期間", start, "〜", today.isoformat(), "", ""],
@@ -605,10 +609,8 @@ def main():
         print(f"::warning::窓({win_start}〜{win_end})の中なのに今回GA4が返さなかった既存キーが "
               f"{mstat['stale_in_window']} 件。古い値が据え置かれています"
               "(GA4のしきい値処理なら正常。急増したらディメンション変更を疑う)")
-    if after["rows"] > DASH_WARN_ROWS:
-        print(f"::warning::{DAILY_SHEET} が {after['rows']} 行。既存 variant_dashboard の参照範囲は "
-              f"A2:A{DASH_REF_ROWS+1} なので、これを超えると集計が**黙って**欠けます。"
-              "--reset-dashboard で作り直すか、ダッシュボードの数式の範囲を手で広げてください")
+    # 旧: 行数がダッシュボードの固定参照範囲を超える前に警告していた。
+    #     2026-07-31 に数式を開放形(A2:A)へ直して天井を撤廃したため、この警告は不要になった。
 
     # 書き込み「前」の縮小検知。マージ方式なら通常は縮まない=縮んだ時点でバグかデータ破損。
     abort_on_shrink(check_no_shrink(before, after), "書込前")
