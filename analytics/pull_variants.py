@@ -10,11 +10,23 @@
 - 率は sessions同士・users同士で出す(単位を混ぜない)
 - tidy(縦持ち)の variant_daily を残す(将来Tableauに繋げやすい)
 
+⚠️ variant_daily は「蓄積型(マージ)」(2026-07-31〜)。
+   以前は ws.clear() → 全書き換えだったため、WINDOW より短い窓で1回実行するだけで
+   窓の外の過去日がシートから消えた(sanity_guards は直近3日しか見ないので検知できない
+   =サイレント障害)。実際 2026-07-31 に 856行 → 341行(07-24〜07-31)まで縮んでいた。
+   今は (date, variant, scenario, metric) をキーにした upsert で、
+   ・同キー = 新しい取得値で上書き(GA4は数日かけて確定するため)
+   ・既存にしかない過去日 = そのまま残す(履歴は消えない)
+   → **variant_daily に対して ws.clear() を使ってはいけない**。
+   さらに書込前に「行数・日付範囲が縮んでいないか」を検証し、縮んでいたら書かずに exit 1。
+
 env: GA4_PROPERTY_ID / SHEET_ID / SA_KEY_PATH(省略時 analytics/service_account.json)
 使い方: python3 pull_variants.py [window_days=60] [--dry] [--reset-dashboard]
-  --dry: シート書込せず表示のみ / --reset-dashboard: variant_dashboardタブを削除→再作成
+  --dry: シート書込せず表示のみ(既存行の読み取りとマージ結果の表示は行う)
+  --reset-dashboard: variant_dashboardタブを削除→再作成
 """
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
@@ -36,8 +48,52 @@ RESET_DASH = "--reset-dashboard" in sys.argv
 
 SCOPES = ["https://www.googleapis.com/auth/analytics.readonly",
           "https://www.googleapis.com/auth/spreadsheets"]
-creds = service_account.Credentials.from_service_account_file(KEY, scopes=SCOPES)
-client = BetaAnalyticsDataClient(credentials=creds)
+# 鍵の読み込みは遅延(import しただけで鍵を要求しない=マージ処理の単体テストが鍵なしで書ける)
+_creds = _client = None
+
+
+def get_creds():
+    global _creds
+    if _creds is None:
+        _creds = service_account.Credentials.from_service_account_file(KEY, scopes=SCOPES)
+    return _creds
+
+
+def get_client():
+    global _client
+    if _client is None:
+        _client = BetaAnalyticsDataClient(credentials=get_creds())
+    return _client
+
+
+DAILY_SHEET = "variant_daily"
+DAILY_HEADER = ["date", "variant", "scenario", "metric", "sessions", "users"]
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# 既存 variant_dashboard の SUMPRODUCT 参照範囲は A2:A5569。蓄積型では行が増え続けるので、
+# ここを超えると「集計が黙って欠ける」。超える前に警告を出す(サイレントを作らない)。
+DASH_REF_ROWS = 5568
+DASH_WARN_ROWS = 4400
+# 新規作成/--reset-dashboard で作り直す時の参照範囲(蓄積型に合わせて広く取る)
+DASH_NEW_ROWS = 20000
+
+CHANGELOG_SHEET = "変更ログ"
+CHANGELOG_HEADER = ["date", "種別", "対象", "内容"]
+# ヘッダ直下の書き方メモ。「先頭が # の行」「date が YYYY-MM-DD でない行」は
+# 機械読み取り(load_changelog)が無視するので、自由に注記を足してよい。
+CHANGELOG_NOTE = [
+    "# 書き方",
+    "1行1イベント",
+    "対象=variant code or 全体",
+    "date は YYYY-MM-DD。先頭が # の行 / date が日付でない行は集計側が無視するので自由に書いてOK。"
+    "種別の例: AB切替 / バリアント追加 / バリアント停止 / LP変更 / 計測変更 / メモ。"
+    "対象は variant code(ins29 等) か 全体。",
+]
+# 新規作成時だけ入れる初期行(=判明済みの切り替え。出典を内容に明記する)
+CHANGELOG_SEED = [
+    ["2026-07-24", "AB切替", "全体",
+     "メモタブ「7/24に切り替えたから25からやる」より。"
+     "第1期(fo/in29/ins29＝ボット有無・起動方式)→第2期(ins29/insp29/inso29＝離脱確認の有無と訴求)"],
+]
 
 # variant_master の初期値(既に存在すれば上書きしない=ユーザー編集を尊重)
 MASTER_HEADER = ["code", "名前", "ツール", "起動", "バケツ", "状態"]
@@ -94,7 +150,7 @@ def load_master() -> dict:
     """variant_master(code->(名前,状態))を読む。無ければseedを使う。"""
     seed = {row[0]: (row[1], row[5]) for row in MASTER_SEED}
     try:
-        gc = gspread.authorize(creds)
+        gc = gspread.authorize(get_creds())
         ws = gc.open_by_key(SHEET_ID).worksheet("variant_master")
         vals = ws.get_all_values()[1:]
         m = {r[0]: (r[1] if len(r) > 1 else "", r[5] if len(r) > 5 else "") for r in vals if r and r[0]}
@@ -129,7 +185,7 @@ def query(url_dims, event_filter, by_date: bool):
     )
     agg = {}
     off = 1 if by_date else 0
-    for r in client.run_report(req).rows:
+    for r in get_client().run_report(req).rows:
         d = r.dimension_values
         var = variant_of(u_from_any(*[d[off + i].value or "" for i in range(len(url_dims))]))
         if by_date:
@@ -161,7 +217,7 @@ def query_events():
         limit=100000,
     )
     agg = {}
-    for r in client.run_report(req).rows:
+    for r in get_client().run_report(req).rows:
         d = r.dimension_values
         ymd = f"{d[0].value[0:4]}-{d[0].value[4:6]}-{d[0].value[6:8]}"
         scenario = d[1].value or "(not set)"
@@ -210,9 +266,11 @@ def ensure_dashboard(sh, existing):
         print("variant_dashboard: 削除→再作成")
     today = datetime.now(timezone(timedelta(hours=9))).date()
     start = (today - timedelta(days=14)).isoformat()
-    D = "variant_daily"  # 参照先。列: A=date B=variant C=scenario D=metric E=sessions
-    Ad, Bd = f"{D}!$A$2:$A$5000", f"{D}!$B$2:$B$5000"
-    Cd, Dd, Ed = f"{D}!$C$2:$C$5000", f"{D}!$D$2:$D$5000", f"{D}!$E$2:$E$5000"
+    D = DAILY_SHEET  # 参照先。列: A=date B=variant C=scenario D=metric E=sessions
+    # variant_daily は蓄積型で行が増え続けるので、参照範囲は広めに取る(狭いと黙って欠ける)
+    N = DASH_NEW_ROWS
+    Ad, Bd = f"{D}!$A$2:$A${N}", f"{D}!$B$2:$B${N}"
+    Cd, Dd, Ed = f"{D}!$C$2:$C${N}", f"{D}!$D$2:$D${N}", f"{D}!$E$2:$E${N}"
     # 制御セル: B1=開始 D1=終了 / B2=バリアント / B3=シナリオ。ヘッダ=5行目、ファネル=6行目〜
     vals = [
         ["期間", start, "〜", today.isoformat(), "", ""],
@@ -270,10 +328,172 @@ def ensure_dashboard(sh, existing):
     print("variant_dashboard: 作成(期間/バリアント/シナリオ切替式)")
 
 
+def _num(v):
+    """シートから読んだ値を数値に戻す。
+    ⚠️必須: 書込は RAW なので、文字列 '12' のまま書き戻すとセルが「文字」になり、
+    variant_dashboard の SUMPRODUCT が**エラーも出さずに 0** を返す(サイレント破壊)。"""
+    if isinstance(v, (int, float)):
+        return int(v)
+    s = str(v).strip().replace(",", "")
+    if not s:
+        return 0
+    try:
+        return int(float(s))
+    except ValueError:
+        return 0
+
+
+def read_daily(sh):
+    """variant_daily の既存行を読む(shrink検証とマージの土台)。
+    戻り: (dict[(date,variant,scenario,metric)] -> 行, 生のデータ行数, 無視した壊れ行数)"""
+    try:
+        ws = sh.worksheet(DAILY_SHEET)
+    except gspread.WorksheetNotFound:
+        return {}, 0, 0
+    vals = ws.get_all_values()
+    if not vals:
+        return {}, 0, 0
+    cur, bad = {}, 0
+    for r in vals[1:]:
+        r = (list(r) + [""] * len(DAILY_HEADER))[:len(DAILY_HEADER)]
+        d = r[0].strip()
+        if not d and not any(c.strip() for c in r):
+            continue          # 完全な空行はカウントしない
+        if not DATE_RE.match(d):
+            bad += 1
+            continue
+        key = (d, r[1].strip(), r[2].strip(), r[3].strip())
+        cur[key] = [key[0], key[1], key[2], key[3], _num(r[4]), _num(r[5])]
+    return cur, sum(1 for r in vals[1:] if any(c.strip() for c in r)), bad
+
+
+def stats_of(rows):
+    """行(ヘッダ抜き)の 行数・最古日・最新日。shrink検証の比較単位。"""
+    dates = sorted({r[0] for r in rows if r and DATE_RE.match(str(r[0]))})
+    return {"rows": len(rows), "min": dates[0] if dates else None,
+            "max": dates[-1] if dates else None}
+
+
+def merge_daily(existing, new_rows, win_start, win_end):
+    """(date, variant, scenario, metric) をキーに upsert。
+    ・同キー → 新しい取得値で上書き(GA4は数日かけて確定するため常に新を採用)
+    ・既存にしかない行 → そのまま残す(=**履歴は構造的に消えない**)
+    戻り: (マージ後の行リスト(ヘッダ抜き・キー順), stats)"""
+    merged = dict(existing)
+    overwritten = changed = added = 0
+    new_keys = set()
+    for row in new_rows:
+        key = (row[0], row[1], row[2], row[3])
+        val = [key[0], key[1], key[2], key[3], int(row[4]), int(row[5])]
+        new_keys.add(key)
+        if key in merged:
+            overwritten += 1
+            if merged[key][4:6] != val[4:6]:
+                changed += 1
+        else:
+            added += 1
+        merged[key] = val
+    # 「窓の中なのに今回GA4が返さなくなった既存キー」= 古い値が残り続ける。
+    # 数値が黙って据え置かれるので、黙殺せず件数を出す(GA4のしきい値処理でも起きうる)。
+    stale = [k for k in existing if k not in new_keys and win_start <= k[0] <= win_end]
+    rows = [merged[k] for k in sorted(merged)]
+    return rows, {"overwritten": overwritten, "changed": changed,
+                  "added": added, "stale_in_window": len(stale)}
+
+
+def check_no_shrink(before, after):
+    """行数・日付範囲が縮んでいないかを検証(=サイレント履歴消失の検知)。
+    マージ方式なら通常は絶対に縮まないので、縮んだ = バグかデータ破損のサイン。
+    戻り: エラー文字列のリスト(空なら健全)"""
+    errs = []
+    if after["rows"] < before["rows"]:
+        errs.append(f"{DAILY_SHEET} の行数が縮小: {before['rows']}行 → {after['rows']}行。"
+                    "蓄積型では起こらないはずの事象(マージ漏れ/既存行の読み取り失敗を疑う)")
+    if before["min"] and (not after["min"] or after["min"] > before["min"]):
+        errs.append(f"{DAILY_SHEET} の最古日が後退: {before['min']} → {after['min']}。過去分が失われている")
+    if before["max"] and (not after["max"] or after["max"] < before["max"]):
+        errs.append(f"{DAILY_SHEET} の最新日が後退: {before['max']} → {after['max']}。直近分が失われている")
+    return errs
+
+
+def abort_on_shrink(errs, phase):
+    """縮小を検知したら、書き込まずに大声で死ぬ(Slack通知は yml の if: failure() 側)。"""
+    if not errs:
+        return
+    for e in errs:
+        print(f"::error::🚨 GUARD({phase}): {e}")
+    print(f"::error::🚨 {DAILY_SHEET} への書き込みを中止しました(履歴保護のため)。"
+          "原因を直してから再実行してください")
+    sys.exit(1)
+
+
+def write_daily(sh, values, existing):
+    """variant_daily を書く。
+    ⚠️ **ws.clear() は絶対に使わない**(過去分消失の元凶。2026-07-31改修)。
+    values はマージ済み=既存の上位集合なので行数は必ず「同じか増える」→
+    上書き書き込みだけで取り残し行は原理的に発生しない。"""
+    if DAILY_SHEET in existing:
+        ws = sh.worksheet(DAILY_SHEET)
+        if ws.row_count < len(values):
+            ws.add_rows(len(values) - ws.row_count + 200)
+        if ws.col_count < len(DAILY_HEADER):
+            ws.add_cols(len(DAILY_HEADER) - ws.col_count)
+    else:
+        ws = sh.add_worksheet(DAILY_SHEET, rows=len(values) + 200, cols=len(DAILY_HEADER))
+    ws.update(values, "A1")
+    return ws
+
+
+def load_changelog(sh):
+    """変更ログ を機械読み(先頭 # / date が YYYY-MM-DD でない行は無視)。
+    書き込みは一切しない。実行ログに出して「いつ何を切り替えたか」を数字の隣に置く。"""
+    try:
+        ws = sh.worksheet(CHANGELOG_SHEET)
+    except gspread.WorksheetNotFound:
+        return []
+    out = []
+    for r in ws.get_all_values()[1:]:
+        r = (list(r) + [""] * len(CHANGELOG_HEADER))[:len(CHANGELOG_HEADER)]
+        d = r[0].strip()
+        if d.startswith("#") or not DATE_RE.match(d):
+            continue
+        out.append([d] + [c.strip() for c in r[1:]])
+    return sorted(out)
+
+
+def ensure_changelog(sh, existing):
+    """変更ログ タブ(人が手で書く・機械が読む)。無ければ作る。
+    ⚠️ **既に有れば中身に一切触らない**(手入力が消えたら本末転倒なので上書き・削除禁止)。"""
+    if CHANGELOG_SHEET in existing:
+        print(f"{CHANGELOG_SHEET}: 既存につき保持(内容には一切触らない)")
+        return
+    ws = sh.add_worksheet(CHANGELOG_SHEET, rows=200, cols=len(CHANGELOG_HEADER))
+    ws.update([CHANGELOG_HEADER, CHANGELOG_NOTE] + CHANGELOG_SEED, "A1")
+    try:    # 見やすさの調整(失敗しても本体は動く)
+        ws.format("A1:D1", {"textFormat": {"bold": True}})
+        ws.format("A2:D2", {"textFormat": {"italic": True,
+                                           "foregroundColor": {"red": .55, "green": .55, "blue": .55}}})
+        sh.batch_update({"requests": [
+            {"updateSheetProperties": {
+                "properties": {"sheetId": ws.id, "gridProperties": {"frozenRowCount": 2}},
+                "fields": "gridProperties.frozenRowCount"}},
+            {"updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": 3, "endIndex": 4},
+                "properties": {"pixelSize": 640}, "fields": "pixelSize"}},
+        ]})
+    except Exception as e:
+        print(f"  ({CHANGELOG_SHEET} の書式設定skip: {e})")
+    print(f"{CHANGELOG_SHEET}: 作成 + 初期行{len(CHANGELOG_SEED)}件"
+          "(以後この関数はタブを作るだけで、中身は二度と触りません)")
+
+
 def sanity_guards(tidy_rows):
     """集計が「静かに」壊れた時にワークフローを失敗させる(通知はymlの if: failure() 側)。
     ジョブ自体はsuccessのまま中身だけ死ぬパターン(2026-07-10のhs_page切り落とし等)への保険。
     ⚠️ シート書込の「後」に呼ぶこと(データは残した上で大声で死ぬ)。
+    ⚠️ 引数は「今回GA4から取り直した行」を渡すこと(マージ後の行を渡すと、窓を短くした時に
+       取得していない日の古い行で判定してしまい、直近3日の検査が骨抜きになる)。
+    ※履歴の縮小検知は別系統(check_no_shrink)。あちらは書込「前」に走って書かずに止める。
     Guard A: 直近3日のチャットイベントのバリアント判定不能率((no_u))が50%超
              → URL形式がまた変わってu=/ab=両方読めなくなった疑い
     Guard B: 直近3日でLP流入が十分あるのにチャットイベントが1件も無い
@@ -307,7 +527,7 @@ def main():
     cta_d = query("pagePathPlusQueryString", eq("eventName", "cta_click"), by_date=True)
     ev_d = query_events()
     # scenario列: LP系(landing/purchase/form_view/cta_click)は "(lp)"、botステップは hs_scenario
-    tidy = [["date", "variant", "scenario", "metric", "sessions", "users"]]
+    tidy = [list(DAILY_HEADER)]
     for (ymd, var), v in sorted(land_d.items()):
         tidy.append([ymd, var, "(lp)", "landing", v["sessions"], v["users"]])
     for (ymd, var), v in sorted(fv_d.items()):
@@ -355,18 +575,48 @@ def main():
     print("  " + " | ".join(f"{c}" for c in w))
     for row in summary[1:]:
         print("  " + " | ".join(str(c) for c in row))
-    print(f"\n[variant_daily] {len(tidy)-1} 行 (先頭5)")
+    print(f"\n[variant_daily] 今回GA4から取得 {len(tidy)-1} 行 (先頭5)")
     for row in tidy[1:6]:
         print("  ", row)
 
-    if DRY:
-        print("\n--dry: シートには書き込みません")
-        return
-
-    # ---- シート書込(新タブのみ・既存は触らない) ----
-    gc = gspread.authorize(creds)
+    # ---- 既存 variant_daily を読んでマージ(蓄積型) ----
+    # --dry でもここまでは走る(読み取りのみ)。「消えないこと」をdry-runで実証できるようにするため。
+    gc = gspread.authorize(get_creds())
     sh = gc.open_by_key(SHEET_ID)
     existing = {ws.title for ws in sh.worksheets()}
+
+    today = datetime.now(timezone(timedelta(hours=9))).date()   # JST固定(RunnerはUTC)
+    win_start = (today - timedelta(days=WINDOW)).isoformat()
+    win_end = today.isoformat()
+    cur, raw_rows, bad_rows = read_daily(sh)
+    before = stats_of(list(cur.values()))
+    daily_rows, mstat = merge_daily(cur, tidy[1:], win_start, win_end)
+    after = stats_of(daily_rows)
+
+    print(f"\n[{DAILY_SHEET} マージ] 既存{before['rows']}行 + 新規{mstat['added']}行 "
+          f"→ 合計{after['rows']}行（うち更新{mstat['overwritten']}行）")
+    print(f"  日付範囲: {before['min']}〜{before['max']} → {after['min']}〜{after['max']}")
+    print(f"  内訳: 同キー上書き{mstat['overwritten']}行(うち値が変化{mstat['changed']}行) / "
+          f"新規追加{mstat['added']}行 / 既存のまま保持{before['rows'] - mstat['overwritten']}行")
+    if bad_rows:
+        print(f"::warning::{DAILY_SHEET} に date が YYYY-MM-DD でない行が {bad_rows} 行あり無視しました"
+              f"(生データ行数{raw_rows} / 採用{before['rows']})")
+    if mstat["stale_in_window"]:
+        print(f"::warning::窓({win_start}〜{win_end})の中なのに今回GA4が返さなかった既存キーが "
+              f"{mstat['stale_in_window']} 件。古い値が据え置かれています"
+              "(GA4のしきい値処理なら正常。急増したらディメンション変更を疑う)")
+    if after["rows"] > DASH_WARN_ROWS:
+        print(f"::warning::{DAILY_SHEET} が {after['rows']} 行。既存 variant_dashboard の参照範囲は "
+              f"A2:A{DASH_REF_ROWS+1} なので、これを超えると集計が**黙って**欠けます。"
+              "--reset-dashboard で作り直すか、ダッシュボードの数式の範囲を手で広げてください")
+
+    # 書き込み「前」の縮小検知。マージ方式なら通常は縮まない=縮んだ時点でバグかデータ破損。
+    abort_on_shrink(check_no_shrink(before, after), "書込前")
+
+    if DRY:
+        print(f"\n--dry: シートには書き込みません(既存{before['rows']}行は保持され、"
+              f"合計{after['rows']}行になる予定。消える行は0行)")
+        return
 
     # variant_master: 無ければ作ってseed。あれば未登録コードだけ追記(ユーザー編集尊重)
     if "variant_master" not in existing:
@@ -383,18 +633,39 @@ def main():
         else:
             print("variant_master: 既存につき保持")
 
-    for title, values in [("variant_daily", tidy), ("variant_summary", summary)]:
-        if title in existing:
-            ws = sh.worksheet(title)
-            ws.clear()
-        else:
-            ws = sh.add_worksheet(title, rows=max(50, len(values) + 5), cols=len(values[0]))
-        ws.update(values, "A1")
-        print(f"{title}: {len(values)-1} 行 更新")
+    # variant_daily: 蓄積型(マージ)。**clear() 禁止**(過去分が消えるため)
+    write_daily(sh, [list(DAILY_HEADER)] + daily_rows, existing)
+    print(f"{DAILY_SHEET}: 既存{before['rows']}行 + 新規{mstat['added']}行 "
+          f"→ 合計{after['rows']}行（うち更新{mstat['overwritten']}行）を書き込み")
 
+    # 書いたら読んで確認(HTTP 200 ≠ 永続化)。ここでも縮小していないかを見る。
+    back, _, _ = read_daily(sh)
+    actual = stats_of(list(back.values()))
+    abort_on_shrink(check_no_shrink(before, actual), "書込後の読み戻し")
+    if actual["rows"] != after["rows"]:
+        print(f"::error::🚨 GUARD(書込後の読み戻し): 期待{after['rows']}行に対し実際は{actual['rows']}行。"
+              "書き込みが一部しか通っていない疑い")
+        sys.exit(1)
+    print(f"  読み戻し検証OK: {actual['rows']}行 / {actual['min']}〜{actual['max']}")
+
+    # variant_summary: 集計結果(窓内の再集計)なので従来どおり全書き換え
+    if "variant_summary" in existing:
+        ws = sh.worksheet("variant_summary")
+        ws.clear()
+    else:
+        ws = sh.add_worksheet("variant_summary", rows=max(50, len(summary) + 5), cols=len(summary[0]))
+    ws.update(summary, "A1")
+    print(f"variant_summary: {len(summary)-1} 行 更新(直近{WINDOW}日の再集計)")
+
+    ensure_changelog(sh, existing)
     ensure_dashboard(sh, existing)
+    log = load_changelog(sh)
+    if log:
+        print(f"\n[{CHANGELOG_SHEET}] {len(log)} 件(数字を読む時の前提)")
+        for r in log:
+            print("  ", " | ".join(r))
     print("完了(既存 data / ダッシュボード は未変更)")
-    sanity_guards(tidy)   # 書込完了後に実行(壊れていたらここでexit 1→Slack通知)
+    sanity_guards(tidy)   # 「今回取得分」で判定。書込完了後に実行(壊れていたらexit 1→Slack通知)
 
 
 if __name__ == "__main__":
