@@ -26,6 +26,10 @@ jobs:
           python-version: '3.12'
       - name: 依存インストール
         run: pip install --quiet gspread google-auth google-analytics-data
+      # 単体テスト（26項目）を本番データに触る前に回す。
+      # ここが落ちたらシートには一切書き込まずに終わる＝壊れたロジックで上書きする事故を防ぐ。
+      - name: 単体テスト（マージ/縮小ガードの回帰検知）
+        run: python analytics/test_pull_variants.py
       - name: SA鍵を配置
         run: echo "$GA4_SA_KEY" > analytics/service_account.json
         env:
@@ -46,12 +50,43 @@ jobs:
       # SLACK_WEBHOOK_URL secret 未設定の間はスキップ(GitHubのメール通知のみ)。
       # 集計が「静かに」壊れた場合も pull_variants.py の sanity_guards が
       # exit 1 するのでここに落ちてくる。
+      # ⛔ payload の組み立て方に注意（2026-07-31 修正）
+      #   旧: printf '{"text":"…\n…"}' … ← \n が **フォーマット文字列内** にあるため printf 自身が
+      #       実改行(0x0A)に展開し、JSON文字列に生の制御文字が入って Slack が invalid_payload で拒否。
+      #       さらに curl -s は HTTP 400 でも exit 0 なので「拒否されたことすら残らない」二重の穴だった。
+      #   新: TEXT に文字列を組み立て → printf '{"text":"%s}' の **引数** として渡す。
+      #       %s は引数のエスケープを解釈しないので \n は literal のまま＝正しい JSON エスケープになる。
+      #   （hugskin-monthly-pipeline の monthly-report.yml と同じ書き方）
+      # cancelled も拾う: timeout-minutes 打ち切りの conclusion は failure ではなく cancelled のため。
       - name: 失敗をSlackへ通知
-        if: failure()
+        if: failure() || cancelled()
         env:
           WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          if [ -z "$WEBHOOK" ]; then echo "SLACK_WEBHOOK_URL未設定のため通知スキップ"; exit 0; fi
-          payload=$(printf '{"text":"🚨 HugSkinチャットボット分析の毎朝更新が失敗しました\n・ログ: %s\n・対応: ログの ::error:: 行を確認 → 直ったら gh workflow run analytics.yml -f backfill_days=7 で取り直し(CLAUDE.md レシピB)\n・シートが古いままでもLP/CVは無影響"}' "$RUN_URL")
-          curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK"
+          set -uo pipefail
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "::warning::SLACK_WEBHOOK_URL 未設定のため通知スキップ（GitHubのメール通知のみ）"
+            exit 0
+          fi
+          if [ "$JOB_STATUS" = "cancelled" ]; then
+            HEAD="⏱️ HugSkinチャットボット分析が中断されました（タイムアウト/キャンセル）"
+          else
+            HEAD="🚨 HugSkinチャットボット分析の毎朝更新が失敗しました"
+          fi
+          TEXT="${HEAD}\n・ログ: ${RUN_URL}\n・対応: ログの ::error:: 行を確認 → 直ったら gh workflow run analytics.yml -f backfill_days=7 で取り直し(CLAUDE.md レシピB)\n・シートが古いままでもLP/CVは無影響"
+          printf '{"text":"%s"}' "$TEXT" > /tmp/slack_payload.json
+          # 送る前に JSON として妥当か検証（壊れたまま投げて黙って拒否される事故の再発防止）
+          python3 -c "import json,sys; json.load(open('/tmp/slack_payload.json'))" || {
+            echo "::error::Slack ペイロードが不正な JSON です。通知を送れませんでした"; exit 1; }
+          # HTTP ステータスを見て、拒否されたら **このステップを失敗させる**（握りつぶさない）
+          CODE=$(curl -sS -o /tmp/slack_resp.txt -w '%{http_code}' \
+                 -X POST -H 'Content-type: application/json' \
+                 --data @/tmp/slack_payload.json "$WEBHOOK")
+          echo "Slack HTTP ${CODE} / response: $(cat /tmp/slack_resp.txt)"
+          case "$CODE" in
+            2*) echo "Slack 通知を送信しました" ;;
+            *)  echo "::error::Slack が通知を受け付けませんでした（HTTP ${CODE}）。Webhook URL とペイロードを確認してください"
+                exit 1 ;;
+          esac
