@@ -26,10 +26,14 @@ jobs:
           python-version: '3.12'
       - name: 依存インストール
         run: pip install --quiet gspread google-auth google-analytics-data
-      # 単体テスト（26項目）を本番データに触る前に回す。
+      # 単体テストを本番データに触る前に回す。
       # ここが落ちたらシートには一切書き込まずに終わる＝壊れたロジックで上書きする事故を防ぐ。
+      #   test_pull_variants.py … variant_daily の蓄積型マージ/縮小ガード（26項目）
+      #   test_pull_ga4.py      … data タブの書込前ガード/空行パディング/読み戻し（29項目）
       - name: 単体テスト（マージ/縮小ガードの回帰検知）
-        run: python analytics/test_pull_variants.py
+        run: |
+          python analytics/test_pull_variants.py
+          python analytics/test_pull_ga4.py
       - name: SA鍵を配置
         run: echo "$GA4_SA_KEY" > analytics/service_account.json
         env:

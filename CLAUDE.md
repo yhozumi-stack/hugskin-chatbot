@@ -487,6 +487,15 @@ python3 -m http.server 8940
 
 - シートの「ダッシュボード」タブ: B3/B4=期間、E3=LP(u=)、E4=シナリオ をセルで切り替えるだけ
 - 「data」タブ: 生データ(date/lp/scenario/event/count/users)。**手で編集しない**(毎朝、直近3日分が洗い替えされる)
+  - **⚠️ `ws.clear()` は絶対に使わない**(2026-08-01改修)。clear と update は別APIコール＝非アトミックで、
+    間で落ちると **dataタブが空のまま朝を迎える**(1,200行超・ダッシュボードの唯一のソース)。
+    現在は「旧行数まで空行で埋めた配列を **update 1回**」で書くので、空になる瞬間が存在しない
+  - **GA4が0行を返したら書き込まずに exit 1**(＝Slack通知)。API成功・データ空(権限/ディメンション変更等)で
+    直近3日が黙って消えるのを防ぐガード。ロジックは `analytics/ga4_merge.py`、
+    テストは `analytics/test_pull_ga4.py`(29項目・workflowが本番データより先に回す)
+  - 書込後に**読み戻して行数・最古日・最新日を検証**する(HTTP 200は「書けた」を意味しないため)
+  - 手元で安全に確かめる(本番シートに書かない):
+    `GA4_PROPERTY_ID=534388892 SHEET_ID=1alEw24pSXbbjtwM5RBl8cCXu77ZLHTHJsTsEO70bEwM python3 analytics/pull_ga4.py 3 --dry-run`
 
 ### 離脱防止ブロック(ダッシュボード行21〜31・2026-07-08新設)
 - **①LPポップアップ(行21-25)**: LP流入(lp_view)→ポップ表示(表示率)→クリック(CTR)→閉じ

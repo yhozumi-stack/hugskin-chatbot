@@ -14,10 +14,18 @@ from google.analytics.data_v1beta.types import (
     RunReportRequest, DateRange, Dimension, Metric, FilterExpression, Filter,
 )
 
+import ga4_merge
+
 PROPERTY_ID = os.environ["GA4_PROPERTY_ID"]
 SHEET_ID = os.environ["SHEET_ID"]
 KEY_PATH = os.environ.get("SA_KEY_PATH", os.path.join(os.path.dirname(__file__), "service_account.json"))
-BACKFILL_DAYS = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+# フラグを先に抜いてから位置引数を読む。
+# ⛔ int() のまま残すこと: CLAUDE.md レシピの Slack疎通テスト
+#    `gh workflow run analytics.yml -f backfill_days=TEST` は、ここで
+#    ValueError を出してworkflowをわざと失敗させる手順になっている。
+_ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]
+DRY_RUN = "--dry-run" in sys.argv[1:]
+BACKFILL_DAYS = int(_ARGS[0]) if _ARGS else 3
 
 creds = service_account.Credentials.from_service_account_file(
     KEY_PATH,
@@ -111,13 +119,49 @@ def main():
     gc = gspread.authorize(creds)
     ws = gc.open_by_key(SHEET_ID).worksheet("data")
     existing = ws.get_all_values()
-    header, body = existing[0], existing[1:]
-    kept = [row for row in body if row and row[0] not in targets]
-    merged = kept + new_rows
-    merged.sort(key=lambda r: (r[0], r[1], r[3]))
-    ws.clear()
-    ws.update([header] + merged, "A1")
-    print(f"Sheet updated: {len(merged)} rows")
+    header, body = (existing[0], existing[1:]) if existing else ([], [])
+    merged, kept, replaced = ga4_merge.merge(body, new_rows, targets)
+
+    before = ga4_merge.summarize(kept + replaced)
+    expected = ga4_merge.summarize(merged)
+    print(f"  既存: {before['rows']}行 / {before['min']}〜{before['max']}"
+          f"  → 書込予定: {expected['rows']}行 / {expected['min']}〜{expected['max']}"
+          f"  (窓外保持 {len(kept)}行 / 洗い替え {len(replaced)}→{len(new_rows)}行)")
+
+    errs, warns = ga4_merge.check_before_write(header, body, new_rows, merged, kept, replaced, targets)
+    for w in warns:
+        print(f"::warning::⚠️ {w}")
+    if errs:
+        for e in errs:
+            print(f"::error::🚨 GUARD(書込前): {e}")
+        print("::error::🚨 data タブへの書き込みを中止しました(データ保護のため)。"
+              "原因を直してから gh workflow run analytics.yml -f backfill_days=7 で取り直してください")
+        sys.exit(1)
+
+    if DRY_RUN:
+        print(f"[DRY-RUN] 書き込みは行いません（{expected['rows']}行を書く予定でした）")
+        return
+
+    # 旧データの取り残しを空行で潰しつつ **update 1回** で書く（ws.clear() を使わない理由は
+    # ga4_merge.build_payload の docstring 参照）。value_input_option は既定=RAW のまま:
+    # ⛔ dataタブの日付は「文字列」で入っている前提でダッシュボードの数式が
+    #    TEXT($B$3,"YYYY-MM-DD") とテキスト比較している。USER_ENTERED にすると
+    #    日付型に変換されて全集計が0になる(2026-07-06に踏んだバグ)。
+    payload = ga4_merge.build_payload(header, merged, len(existing))
+    if ws.row_count < len(payload):
+        ws.add_rows(len(payload) - ws.row_count + 200)
+    ws.update(payload, "A1")
+
+    # HTTP 200 は「書けた」を意味しない。読み直して突き合わせる。
+    actual_rows = [ga4_merge.normalize_row(r) for r in ws.get_all_values()[1:]
+                   if r and any(str(c).strip() for c in r)]
+    actual = ga4_merge.summarize(actual_rows)
+    verify_errs = ga4_merge.check_after_write(expected, actual)
+    if verify_errs:
+        for e in verify_errs:
+            print(f"::error::🚨 GUARD(書込後の読み戻し): {e}")
+        sys.exit(1)
+    print(f"Sheet updated: {actual['rows']} rows / {actual['min']}〜{actual['max']} (読み戻し検証OK)")
 
 if __name__ == "__main__":
     main()
