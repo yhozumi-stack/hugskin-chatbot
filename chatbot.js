@@ -1,5 +1,9 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.28.1
+    HugSkin 獲得チャットボット v3.28.2
+    (v3.28.2: 定期条件案内を一番最初(ローディング演出より前)に出す
+     シナリオ formplus_np3 を追加。案内の位置は3種から選べる=
+     np:ローディング→案内→画像 / np2:ローディング→画像→案内 /
+     np3:案内→ローディング→画像。既存シナリオは無変更)
     (v3.28.1: 確認画面の注意喚起文で **〜** 囲みを太字+濃色で表示。
      NP審査の「定期契約部分が小さく薄くて視認しづらい」指摘への対応。
      lawText に ** を書いたLPだけで発動=既存LP無影響)
@@ -427,6 +431,11 @@ SCENARIOS.formplus_np = SCENARIOS.formplus.slice(0, 1).concat([
    案内ステップは formplus_np と同一オブジェクトを共有(文言・スタイルは常に同じ) */
 SCENARIOS.formplus_np2 = SCENARIOS.formplus.slice(0, 2)
   .concat([SCENARIOS.formplus_np[1]], SCENARIOS.formplus.slice(2));
+
+/* さらに並び違い版: 定期条件の案内を「一番最初(ローディング演出よりも前)」に出す。
+   np = ローディング→案内→画像 / np2 = ローディング→画像→案内 / np3 = 案内→ローディング→画像。
+   案内ステップは3つとも同一オブジェクトを共有(文言・スタイルは常に同じ) */
+SCENARIOS.formplus_np3 = [SCENARIOS.formplus_np[1]].concat(SCENARIOS.formplus);
 
 /* 確認画面などで使う項目名 */
 var LABELS = {
