@@ -6,9 +6,13 @@
   ecforce 管理画面 > タグ管理 で登録し、NP後払いのLPに適用する。
 
   ▼ このタグに入っている設定（すべてタグ側だけで完結・chatbot.js編集不要）
-    ① scenario: 'formplus_np2'
-       … ローディング演出 → 冒頭画像 → 定期コース条件の案内（注記スタイル）
+    ① scenario: 'formplus_np3'
+       … 定期コース条件の案内（注記スタイル） → ローディング演出 → 冒頭画像
          案内文は greeting で上書き。金額改定時はここを書き換えるだけ
+         位置は3種から選択可（タグの scenario を変えるだけ・push不要）:
+           formplus_np  = ローディング演出 → 案内 → 画像
+           formplus_np2 = ローディング演出 → 画像 → 案内
+           formplus_np3 = 案内 → ローディング演出 → 画像  ← 現在の設定
     ② summaryOptions.lawFull / lawText
        … 確認画面の注意喚起文をスクロールなしで全文表示。
          このLPは利用規約チェックまで qa-caution が出ないテーマのため、
@@ -30,18 +34,18 @@
     ・LP側の同意チェックをデフォルトOFFにする場合、agree: 'unchecked' は必須（設定済み）
     ・agree: false（非表示）だけはLP側OFFと絶対に組み合わせない
 
-  ▼ 要 chatbot.js v3.28.1 以降（配信済み）
+  ▼ 要 chatbot.js v3.28.2 以降（配信済み。formplus_np3 は v3.28.2〜）
   ▼ 配信URL: https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js
 ============================================================ -->
 <script>
 window.HS_CHAT = {
-  scenario: 'formplus_np2',
+  scenario: 'formplus_np3',
   greeting: '【定期コースのご案内】\n・2回目以降の決済金額は20%OFFの11,440円（税込・送料無料）です。\n・お届けサイクル：2回目以降は選択したサイクル（30日・45日・60日）ごと、または指定日にお届けします。\n・解約について：次回配送予定日の10日前までにマイページにてお手続きください。',
   vars: {
     PRICE: '2,980円（税込）',
   },
   mode: 'float',
-  autoOpen: 'manual',
+  autoOpen: 'immediate',   // LP表示と同時に開く
   openTriggers: 'a[href="#lp-form"]',
   launcher: false,
   countdown: true,
@@ -49,7 +53,7 @@ window.HS_CHAT = {
     modal: true,
     lawFull: true,
     qaWait: false,
-    lawText: '**・初回は「HugSkin C10 ALL IN SERUM」1本を、通常価格14,300円(税込)から79%OFFの2,980円(税込)でお届けいたします。**\n・初回のご注文から原則2〜3日程度でお届けいたします。\n**・2回目以降は20%OFFの11,440円(税込)で、前回のお届けから30日前後を目安にお届けいたします（全て送料無料です）。**解約のお申し出があるまで定期的にお届けする自動更新コースです。\n・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。\n・代金のご請求は各回の商品発送時に発生いたします。実際のお引き落とし・お支払い時期はご利用のお支払い方法に準じます。\n**・解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。**\n・ご注文確定後のキャンセルは承れません。詳しくはショッピングガイドのキャンセルについてをご確認ください。\n・お申込み内容（数量やお届け先など）の修正は、前画面に戻り修正してください。',
+    lawText: '**・初回は「HugSkin C10 ALL IN SERUM」1本を、通常価格14,300円(税込)から79%OFFの2,980円(税込)でお届けいたします。**\n・初回のご注文から原則2〜3日程度でお届けいたします。\n**・2回目以降は30日前後を目安にお届けし、20%OFFの11,440円(税込)になります。（全て送料無料です）。**解約のお申し出があるまで定期的にお届けする自動更新コースです。\n・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。\n・代金のご請求は各回の商品発送時に発生いたします。実際のお引き落とし・お支払い時期はご利用のお支払い方法に準じます。\n**・解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。**\n・ご注文確定後のキャンセルは承れません。詳しくはショッピングガイドのキャンセルについてをご確認ください。\n・お申込み内容（数量やお届け先など）の修正は、前画面に戻り修正してください。',
     agree: 'unchecked',
   },
   cardCvv: false,
@@ -87,4 +91,4 @@ window.HS_CHAT = {
   },
 };
 </script>
-<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=32" defer></script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=33" defer></script>
