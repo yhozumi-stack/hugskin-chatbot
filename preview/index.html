@@ -183,7 +183,8 @@ window.HS_CHAT = {
   if (c) { try { Object.assign(window.HS_CHAT, JSON.parse(decodeURIComponent(c[1]))); } catch (e) { alert('cfg JSONが不正: ' + e); } }
 })();
 </script>
-<script src="../chatbot.js" defer></script>
+<!-- ローカル確認では常に最新のchatbot.jsを読む(ブラウザキャッシュで編集前の版が動く事故防止) -->
+<script>document.write('<script src="../chatbot.js?ts=' + Date.now() + '" defer><\/script>');</script>
 <!-- ▲▲ ここまで ▲▲ -->
 
 </body>

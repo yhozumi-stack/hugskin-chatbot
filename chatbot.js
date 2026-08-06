@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.28.2
+    HugSkin 獲得チャットボット v3.28.3
+    (v3.28.3: メール既登録エラーの遅延検知を追加。エラーバナーを
+     読込後にJSで表示するLPテーマだと初期化時の一発判定で取りこぼし、
+     ログイン案内が出ずにチャットが素で再スタートしていた不具合の修正。
+     初期化から約10秒間再判定し、見つけたら未入力に限りログイン案内へ
+     切り替える。エラーの無い通常ページでは挙動不変(全LP共通・設定不要))
     (v3.28.2: 定期条件案内を一番最初(ローディング演出より前)に出す
      シナリオ formplus_np3 を追加。案内の位置は3種から選べる=
      np:ローディング→案内→画像 / np2:ローディング→画像→案内 /
@@ -893,6 +898,7 @@ function mount() {
     target.appendChild(host);
     track('open');
     startFlow();
+    watchDupEmailLate();   // エラーバナーが読込後に出るLPテーマ対策(遅延検知)
     return;
   }
   document.body.appendChild(host);
@@ -913,6 +919,7 @@ function mount() {
 
   /* メール既登録エラー・与信NGで戻ってきた画面では、設定に関わらず自動で開いて案内する */
   if (payNG || detectDupEmailError()) return openPanel();
+  watchDupEmailLate();   // エラーバナーが読込後に出るLPテーマ対策(遅延検知)
 
   var a = String(CFG.autoOpen || 'manual');
   if (a === 'immediate') openPanel();
@@ -1141,6 +1148,7 @@ function startFlow() {
   if (payNG) { runPaymentRecovery(); return; }
   /* 送信後「メール既登録」で弾かれて戻ってきた画面なら、先にログイン案内を出す */
   if (detectDupEmailError()) {
+    dupGuideShown = true;
     track('dup_email_detected');
     renderLoginGuide(
       'ご入力のメールアドレスは既にご登録があるようです💡\nログインしていただくとスムーズにご注文いただけます✨',
@@ -1481,6 +1489,40 @@ function detectDupEmailError() {
     var t = document.body.innerText || '';
     return /(メールアドレス|Ｅメール|Eメール|email)[^\n。]{0,40}(既に|すでに)[^\n。]{0,15}(登録|使用|存在)/i.test(t);
   } catch (e) { return false; }
+}
+
+/* メール既登録エラーの遅延検知(v3.28.3)。
+   LPテーマによってはエラーバナーを読込後にJSで表示するため、初期化時の一発判定では
+   取りこぼす(body.innerText は display:none の中身を含まない=表示された瞬間まで見えない)。
+   初期化から約30秒間だけ再判定し、見つけたらログイン案内に切り替える。
+   エラーバナーの無い通常ページでは何もせず約30秒で自動終了(全LP共通・設定不要) */
+var dupGuideShown = false;
+function watchDupEmailLate() {
+  if (dupGuideShown) return;
+  var tries = 0;
+  var tm = setInterval(function () {
+    if (++tries > 30 || dupGuideShown) return clearInterval(tm);
+    if (!detectDupEmailError()) return;
+    clearInterval(tm);
+    if (!started) return openPanel();   // 未起動なら開くだけ(startFlow側の判定で案内が出る)
+    /* 起動済み(autoOpen等でフローが走り始めた後)の場合:
+       冒頭演出が流れ終わるのを待ってから、未入力ならログイン案内に差し替える。
+       既に入力が始まっていたら邪魔しない(従来どおり) */
+    setTimeout(function () {
+      if (dupGuideShown || transferStarted) return;
+      var answered = false;
+      for (var k in answers) { answered = true; break; }
+      if (answered) return;
+      dupGuideShown = true;
+      track('dup_email_detected');
+      if (msgsEl) msgsEl.innerHTML = '';
+      renderLoginGuide(
+        'ご入力のメールアドレスは既にご登録があるようです💡\nログインしていただくとスムーズにご注文いただけます✨',
+        function () { runStep(0); },
+        '別のメールアドレスで入力する'
+      );
+    }, 3000);
+  }, 1000);
 }
 
 /* ============================================================
