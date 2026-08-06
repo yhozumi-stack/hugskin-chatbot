@@ -159,6 +159,24 @@ window.HS_CHAT = {
   if (/[?&]lawfull/.test(location.search)) window.HS_CHAT.summaryOptions = { lawFull: true };
   if (/[?&]openimg/.test(location.search)) window.HS_CHAT.opening.image = '../img/chat_fv2_2980.jpeg';
   if (/[?&]checks/.test(location.search)) window.HS_CHAT.inputChecks = {};
+  /* ?tag=<tags/配下のファイル名(拡張子なし)> … ecforceに貼る本番タグそのものを読み込んでテストする。
+     例: ?tag=ecforce_tag_np_shinsa
+     タグファイル内の window.HS_CHAT をそのまま適用するので「貼る予定のタグ＝テストした物」になる。
+     ※chatbot.js(defer)より先に確定させる必要があるため同期XHRで読む(ローカル確認用ページ限定) */
+  var tg = location.search.match(/[?&]tag=([\w.-]+)/);
+  if (tg) {
+    try {
+      var x = new XMLHttpRequest();
+      x.open('GET', '../tags/' + tg[1] + '.html', false);
+      x.send(null);
+      var mm = x.responseText.match(/window\.HS_CHAT\s*=\s*(\{[\s\S]*?\n\};)/);
+      if (!mm) throw new Error('タグ内に window.HS_CHAT が見つかりません');
+      var tagCfg = eval('(' + mm[1].replace(/\};\s*$/, '}') + ')');
+      tagCfg.autoOpen = 'immediate';                      // テストしやすいよう即時起動に上書き
+      tagCfg.ecforceOrderUrl = './orders_new_mock.html';  // 転記先はモックへ
+      Object.assign(window.HS_CHAT, tagCfg);
+    } catch (e) { alert('タグ読込に失敗: ' + e.message); }
+  }
   /* &cfg=<URLエンコードしたJSON> … 本番タグのHS_CHAT設定をそのまま流し込んでテストできる
      例: ?cfg=%7B%22scenario%22%3A%22formplus_np%22%7D */
   var c = location.search.match(/[?&]cfg=([^&]+)/);
