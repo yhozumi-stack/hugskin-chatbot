@@ -1,0 +1,74 @@
+<!-- ============================================================
+  HugSkin 獲得チャットボット NP後払い タグ（通常立ち上げ＝CTA起動版）
+  ------------------------------------------------------------
+  正本 ecforce_tag_np_shinsa.html の「起動タイミング違い」版。
+  中身は正本と同じNP対応一式で、違いは次の2点だけ:
+    ・autoOpen: 'manual'      … LP表示と同時には開かない（正本は 'immediate'）
+                                LPのCTAボタン（#lp-form アンカー）を押すと開く
+    ・scenario: 'formplus_np' … ローディング演出 → 案内 → 画像
+                                （正本は formplus_np3 = 案内 → ローディング → 画像）
+  ※起動タイミングだけ変えたい場合は autoOpen の1語、
+    案内の位置だけ変えたい場合は scenario の1語を書き換えるだけ（push不要）。
+
+  ▼ launcher: false なので、チャットを開く手段は openTriggers のCTAのみ。
+    openTriggers を消す場合は autoOpen か launcher のどちらかを必ず有効にすること。
+
+  ▼ 設定の意味の詳細は正本 ecforce_tag_np_shinsa.html のヘッダを参照
+  ▼ 要 chatbot.js v3.28.2 以降
+  ▼ 配信URL: https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js
+============================================================ -->
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus_np',
+  greeting: '【定期コースのご案内】\n・2回目以降の決済金額は20%OFFの11,440円（税込・送料無料）です。\n・お届けサイクル：2回目以降は30日前後を目安にお届けしますが、ご購入後にマイページより45日・60日への変更も可能です。\n・解約について：次回配送予定日の10日前までにマイページにてお手続きください。',
+  vars: {
+    PRICE: '2,980円（税込）',
+  },
+  mode: 'float',
+  autoOpen: 'manual',      // 通常立ち上げ（自動では開かない。CTAボタンで開く）
+  openTriggers: 'a[href="#lp-form"]',
+  launcher: false,
+  countdown: true,
+  summaryOptions: {
+    modal: true,
+    lawFull: true,
+    qaWait: false,
+    lawText: '**・初回は「HugSkin C10 ALL IN SERUM」1本を、通常価格14,300円(税込)から79%OFFの2,980円(税込)でお届けいたします。**\n・初回のご注文から原則2〜3日程度でお届けいたします。\n**・2回目以降は30日前後を目安にお届けし、20%OFFの11,440円(税込)になります（全て送料無料です）。**解約のお申し出があるまで定期的にお届けする自動更新コースです。\n・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。\n・代金のご請求は各回の商品発送時に発生いたします。実際のお引き落とし・お支払い時期はご利用のお支払い方法に準じます。\n**・解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。**\n・ご注文確定後のキャンセルは承れません。詳しくはショッピングガイドのキャンセルについてをご確認ください。\n・お申込み内容（数量やお届け先など）の修正は、前画面に戻り修正してください。',
+    agree: 'unchecked',
+  },
+  cardCvv: false,
+
+  /* ★入力ミス検知（桁数ガード＋警告＋お届け先確認）— 与信NG実データ根拠 */
+  inputChecks: {},
+  /* ★住所欄の注意喚起（ベリトランス提案） */
+  fieldNotes: {
+    addr2: 'アパート・マンションの方は建物名と部屋番号まで正確にご入力ください',
+  },
+
+  stepImages: {
+    payment: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/payment_promo.png',
+  },
+
+  /* ★NP①: 支払い方法の表示名をNPに変更 */
+  paymentLabels: {
+    'クレジット': 'クレジットカード【手数料0円】',
+    '後払い': 'NP後払い（コンビニ・郵便局・銀行・PayPay）',
+  },
+
+  /* ★NP②: 後払い選択直後にNPバナー＋規定文言（別送版）を表示 */
+  codNoticeImage: 'https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/np/np_468x200-12.png',
+  codNotice: '○このお支払方法の詳細\n商品の到着を確認してから、「コンビニ」「郵便局」「銀行」「PayPay」で後払いできる安心・簡単な決済方法です。請求書は、商品とは別に郵送されますので、発行から14日以内にお支払いをお願いします。お支払い期日を過ぎてもお支払いの確認ができない場合、手数料が加算される場合がございます。\n\n○ご注意\n後払い手数料：無料\n後払いのご注文には、株式会社ネットプロテクションズの後払いサービスが適用され、同社へ代金債権を譲渡します。NP後払い利用規約及び同社のプライバシーポリシーに同意して、後払いサービスをご選択ください。\nNP後払い利用規約：https://np-atobarai.jp/terms/atobarai-buyer.html\nサービス詳細：https://np-atobarai.jp/about/\nご利用限度額は累計残高で55,000円（税込）迄です。\nご利用者が未成年の場合、法定代理人の利用同意を得てご利用ください。',
+
+  /* ★NP③: 与信NGリカバリー（後払いで弾かれたらクレカ再注文へ自動誘導） */
+  paymentFallback: {},
+
+  opening: {
+    images: [
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv1_6980.png',
+      'https://yhozumi-stack.github.io/hugskin-chatbot/img/chat_fv2_2980.jpeg',
+    ],
+    stockCheck: true,
+  },
+};
+</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=33" defer></script>

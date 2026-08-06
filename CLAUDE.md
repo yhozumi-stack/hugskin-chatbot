@@ -288,7 +288,8 @@ paymentFallback: {},   // 最小はこれだけでON。文言を変えたい時�
 
 ### レシピ19: NP後払い審査用チャットボット(formplus_np・v3.27.0〜)
 NP(ネットプロテクションズ)の加盟店審査に向けたLP用の3点セット。**審査用LPのタグだけで有効=既存LPは無影響**。
-タグの正本: `tags/ecforce_tag_np_shinsa.html`
+タグの正本: `tags/ecforce_tag_np_shinsa.html`(即チャット版=`autoOpen:'immediate'` / `formplus_np3`)
+起動タイミング違い: `tags/ecforce_tag_np_cta.html`(通常立ち上げ=`autoOpen:'manual'`でCTA起動 / `formplus_np`)
 1. **冒頭の定期コース条件案内**: `scenario: 'formplus_np'` を指定。formplusと同一フローの冒頭(最初の入力の前)に
    「2回目以降11,440円(税込・送料無料)/お届けサイクル(30・45・60日または指定日)/解約は次回配送予定日の10日前まで」の案内msgが入る。
    案内は `key:'greet'` なので**金額改定時はタグの `greeting` で上書きするだけ**(push不要)。冒頭画像はタグの `opening.image`
