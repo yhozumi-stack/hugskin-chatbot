@@ -38,6 +38,10 @@ window.HS_CHAT = {
   },
   cardCvv: false,
 
+  /* ★メール入力時点の既登録チェック(v3.28.4〜)。メール確定の直後に既登録なら
+     「＊ 既に使われています」を検知して、送信前にログイン案内を出す */
+  emailDupCheck: true,
+
   /* ★入力ミス検知（桁数ガード＋警告＋お届け先確認）— 与信NG実データ根拠 */
   inputChecks: {},
   /* ★住所欄の注意喚起（ベリトランス提案） */
@@ -71,4 +75,4 @@ window.HS_CHAT = {
   },
 };
 </script>
-<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=34" defer></script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/chatbot.js?v=35" defer></script>

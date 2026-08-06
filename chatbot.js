@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.28.3
+    HugSkin 獲得チャットボット v3.28.4
+    (v3.28.4: メール入力時点の既登録チェック emailDupCheck を追加(既定OFF)。
+     メール確定の転記直後にメール欄だけ change/blur を発火してecforceの
+     既登録チェックを誘発し、「＊ 既に使われています」表示を検知したら
+     送信前にその場でログイン案内を出す。タグに emailDupCheck: true で有効化。
+     hideForm併用不可。詳細はDEFAULTSのコメント)
     (v3.28.3: メール既登録エラーの遅延検知を追加。エラーバナーを
      読込後にJSで表示するLPテーマだと初期化時の一発判定で取りこぼし、
      ログイン案内が出ずにチャットが素で再スタートしていた不具合の修正。
@@ -213,6 +218,14 @@ var DEFAULTS = {
   autoSubmit: true,
   ecforceOrderUrl: 'https://hugskin.shop/shop/orders/new',
   loginUrl: 'https://hugskin.shop/shop/customers/sign_in',  // 会員向けログイン画面
+  /* メール入力時点の既登録チェック(既定OFF・v3.28.4)。trueにしたLPだけ、
+     チャットでメール確定→LPフォームへ転記した直後に change/blur を追加発火して
+     ecforceの既登録チェックAJAXを誘発し、メール欄付近の「＊ 既に使われています」
+     表示を検知したら、送信を待たずその場でログイン案内を出す。
+     (通常の転記はAJAX再描画事故=v3.9.1の教訓を避けるためinputしか発火しない。
+      このオプションはメール欄1箇所だけ意図的に発火させる)
+     ⚠️ hideForm併用不可(エラーが画面に出ないため検知できない) */
+  emailDupCheck: false,
   paymentChoices: null,            // 支払い選択肢の手動指定(通常はLPフォームから自動生成されるので不要)
   /* 支払いボタンの表示文言をタグから変更(キー=元の文言に含まれる語、値=表示したい文言)。
      例: paymentLabels: { 'クレジット': 'クレジットカード【手数料0円】' }
@@ -1194,9 +1207,60 @@ function earlyLeadCapture() {
     if (answers.email) {
       setField(form, 'order[email]', answers.email);
       setField(form, 'order[customer_attributes][email]', answers.email);
+      inlineEmailDupCheck(form);   // emailDupCheck有効LPのみ動く(既定OFF)
     }
     if (answers.tel) setField(form, 'order[billing_address_attributes][tel01]', answers.tel);
   } catch (e) {}
+}
+
+/* ---------- メール入力時点の既登録チェック(emailDupCheck・既定OFF・v3.28.4) ----------
+   ecforceはメール欄の change/blur で既登録チェックを走らせ、欄の近くに
+   「＊ 既に使われています」のツールチップを出す(2026-08-07 実LPで確認)。
+   メール確定の転記直後にそれを意図的に誘発し、数秒間エラー表示を監視。
+   見つけたら送信を待たずログイン案内を挟む(「別のメールアドレスで入力する」は
+   1問修正でメール欄だけ再入力→元いた質問に直帰する既存の仕組みに乗せる) */
+var lastDupCheckedEmail = null, inlineDupGuideShown = false;
+function detectDupEmailInline() {
+  try {
+    var t = document.body.innerText || '';
+    /* ツールチップの実文言に限定した厳しめ判定(静的文言「既にご登録の方は〜」等への誤反応防止) */
+    return /(既に|すでに)\s*(使われています|登録済みです|登録されています)/.test(t);
+  } catch (e) { return false; }
+}
+function inlineEmailDupCheck(form) {
+  /* editMode中もチェックする(「別のメールで入力する」で修正した新メールの再検証に必要) */
+  if (!CFG.emailDupCheck || transferStarted) return;
+  var em = answers.email;
+  if (!em || em === lastDupCheckedEmail) return;
+  lastDupCheckedEmail = em;
+  /* ecforceの既登録チェックを誘発(メール欄だけ change/blur/focusout を発火) */
+  ['order[email]', 'order[customer_attributes][email]'].forEach(function (n) {
+    var el = form.querySelector('[name="' + n + '"]');
+    if (!el || !el.value) return;
+    try {
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur'));
+      el.dispatchEvent(new Event('focusout', { bubbles: true }));
+    } catch (e) {}
+  });
+  /* AJAXの往復を1.2秒待ってから約6秒間監視(古いエラー表示への誤反応も減らす) */
+  setTimeout(function () {
+    var tries = 0;
+    var tm = setInterval(function () {
+      if (++tries > 10 || transferStarted) return clearInterval(tm);
+      if (answers.email !== em) return clearInterval(tm);   // 別メールに修正済みなら旧チェックは破棄
+      if (!detectDupEmailInline()) return;
+      clearInterval(tm);
+      if (inlineDupGuideShown) return;
+      inlineDupGuideShown = true;
+      track('dup_email_inline');
+      renderLoginGuide(
+        'ご入力のメールアドレスは既にご登録があるようです💡\n会員の方はログインしていただくとスムーズです✨\n（このままだと新規のご注文を完了できない場合があります）',
+        function () { inlineDupGuideShown = false; startEdit('email'); },
+        '別のメールアドレスで入力する'
+      );
+    }, 600);
+  }, 1200);
 }
 
 function next(i) {
