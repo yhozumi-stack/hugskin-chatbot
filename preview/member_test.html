@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>【プレビュー】ログイン済み会員LP — memberStart 動作確認</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;margin:0;color:#333}
+  .note{background:#fff8e1;border-bottom:1px solid #f0e0a0;padding:14px 16px;font-size:13px;line-height:1.8}
+  .note code{background:#fff;padding:1px 5px;border-radius:4px}
+  section{padding:24px 16px;max-width:640px;margin:0 auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 6px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
+  input,select{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:15px;box-sizing:border-box}
+  h2{font-size:16px;border-left:4px solid #C8869A;padding-left:8px}
+</style>
+</head>
+<body>
+<div class="note">
+  <b>ログイン済み会員LPのモック</b>（memberStart のテスト用）<br>
+  ecforce がログイン中の会員に返す状態（氏名・住所・メールが入った注文フォーム＋登録済みカードのセレクト）を再現しています。<br>
+  ・<code>?logout</code> … 未ログイン状態（全項目空）で開く＝従来フローになることの確認<br>
+  ・<code>?nocard</code> … ログイン済みだが登録カード無し＝支払いが通常の2択になることの確認<br>
+  ・<code>?pw</code> … ログイン中でもパスワード欄が必須表示されるテーマの再現（パスワードのみ質問されるか）
+</div>
+
+<section>
+  <h2>お客様情報のご入力</h2>
+  <form action="/lp" method="post">
+    <table>
+      <tr><th>お名前</th><td><input name="order[billing_address_attributes][name01]"></td></tr>
+      <tr><th>フリガナ</th><td><input name="order[billing_address_attributes][kana01]"></td></tr>
+      <tr><th>郵便番号</th><td><input name="order[billing_address_attributes][zip01]"></td></tr>
+      <tr><th>都道府県</th><td>
+        <select name="order[billing_address_attributes][prefecture_id]">
+          <option value="">選択してください</option>
+          <option value="12">千葉県</option>
+          <option value="13">東京都</option>
+          <option value="14">神奈川県</option>
+        </select></td></tr>
+      <tr><th>住所1</th><td><input name="order[billing_address_attributes][addr01]"></td></tr>
+      <tr><th>住所2</th><td><input name="order[billing_address_attributes][addr02]"></td></tr>
+      <tr><th>電話番号</th><td><input name="order[billing_address_attributes][tel01]"></td></tr>
+      <tr><th>メール</th><td><input type="email" name="order[email]"></td></tr>
+      <tr id="pw-row" style="display:none"><th>パスワード</th><td><input type="password" name="order[customer_attributes][password]"></td></tr>
+      <tr><th>生年月日</th><td>
+        <select name="order[customer_attributes][birth(1i)]"><option value=""></option><option value="1992">1992</option></select>
+        <select name="order[customer_attributes][birth(2i)]"><option value=""></option><option value="1">1</option></select>
+        <select name="order[customer_attributes][birth(3i)]"><option value=""></option><option value="15">15</option></select>
+      </td></tr>
+      <tr><th>性別</th><td><select name="order[customer_attributes][sex_id]"><option value=""></option><option value="1">男性</option><option value="2">女性</option></select></td></tr>
+      <tr><th>お支払い方法</th><td>
+        <select name="order[payment_attributes][payment_method_id]">
+          <option value="21">クレジットカード一括</option>
+          <option value="57">NP 後払いリアルタイム</option>
+        </select></td></tr>
+      <tr id="card-row"><th>クレジットカード番号</th><td>
+        <select id="card-id" name="order[payment_attributes][source_id]">
+          <option value="75" selected>************1010 （05/31）</option>
+          <option value="0">新しく登録する</option>
+        </select></td></tr>
+      <tr><th>カード番号(手入力)</th><td><input id="input-cc-number" name="order[payment_attributes][source_attributes][number]"></td></tr>
+      <tr><th>有効期限</th><td>
+        <select id="input-cc-month" name="order[payment_attributes][source_attributes][month]"><option value=""></option><option value="1">1</option><option value="5">5</option></select>
+        <select id="input-cc-year" name="order[payment_attributes][source_attributes][year]"><option value=""></option><option value="26">26</option><option value="31">31</option></select>
+      </td></tr>
+      <tr><th>カード名義</th><td><input id="input-cc-name" name="order[payment_attributes][source_attributes][name]"></td></tr>
+    </table>
+
+    <div class="qa-product_name" style="font-size:12px;margin-top:14px">HugSkin C10 オールインセラム【定期】_0012</div>
+    <span class="qa-product_price">2,709円</span> <span class="qa-product_quantity">1 個</span>
+    <span class="qa-deliv_fee">0円</span> <span class="qa-tax">271円</span> <span class="qa-total">2,980円</span>
+    <div class="qa-caution" style="font-size:11px;color:#888">・初回は2,980円(税込)でお届けします。・2回目以降は11,440円(税込)。・解約は次回発送予定日の10日前までに。</div>
+
+    <input type="submit" class="submit_button_complete_ec" value="ご注文手続きへ"
+      onclick="window.__lpSubmitClicked = true; return false;">
+  </form>
+</section>
+
+<script>
+  // ecforce がログイン会員に返す「登録情報入りフォーム」を再現
+  var q = location.search;
+  var loggedOut = /[?&]logout/.test(q);
+  if (!loggedOut) {
+    document.querySelector('[name="order[billing_address_attributes][name01]"]').value = '保積 佑樹';
+    document.querySelector('[name="order[billing_address_attributes][kana01]"]').value = 'ホヅミ ユウキ';
+    document.querySelector('[name="order[billing_address_attributes][zip01]"]').value = '1730023';
+    document.querySelector('[name="order[billing_address_attributes][prefecture_id]"]').value = '13';
+    document.querySelector('[name="order[billing_address_attributes][addr01]"]').value = '板橋区大山町';
+    document.querySelector('[name="order[billing_address_attributes][addr02]"]').value = '19-7';
+    document.querySelector('[name="order[billing_address_attributes][tel01]"]').value = '09012345678';
+    document.querySelector('[name="order[email]"]').value = 'y.hozumi1992@gmail.com';
+  }
+  if (/[?&]nocard/.test(q) || loggedOut) document.getElementById('card-row').remove();
+  if (/[?&]pw/.test(q)) document.getElementById('pw-row').style.display = '';
+
+  // 入力された欄を緑枠に(転記の可視化)
+  document.addEventListener('input', function (e) {
+    if (e.target.name && e.target.value) e.target.style.outline = '2px solid #7bc47f';
+  }, true);
+</script>
+
+<script>
+window.HS_CHAT = {
+  scenario: 'formplus_np',
+  autoOpen: 'immediate',
+  cardCvv: false,
+  memberStart: true,      // ★今回のテスト対象
+  memberLogin: true,
+  emailDupCheck: true,
+  summaryOptions: { qaWait: false },
+  ecforceOrderUrl: './orders_new_mock.html',
+};
+</script>
+<script>document.write('<script src="../chatbot.js?ts=' + Date.now() + '" defer><\/script>');</script>
+</body>
+</html>

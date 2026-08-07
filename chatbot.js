@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.31.0
+    HugSkin 獲得チャットボット v3.32.0
+    (v3.32.0: 既にログイン済みでLPに来た会員の短縮フロー memberStart を追加
+     (既定OFF)。ecforceがフォームに登録情報を差し込んだ状態を「チャットが
+     書き込む前」に検出し、氏名・生年月日・住所・メール・パスワードを聞かず
+     「ログイン中である説明+登録情報の確認」→支払い→確認画面に短縮する。
+     お届け先だけ変更でき、変更しない限りフォームは上書きしない)
     (v3.31.0: 登録済みカードがある会員は、支払い方法の選択自体を
      「このカードで進む / 別のカードにする / 後払い」の3択に差し替える。
      カード入力ステップは出さない(「別のカード」を選んだ時だけ入力)。
@@ -272,6 +277,14 @@ var DEFAULTS = {
      実ページで確認(customer[email]/customer[password]/authenticity_token/sign_in_route) */
   memberLogin: false,
   forgotUrl: 'https://hugskin.shop/shop/customers/password/new',  // パスワード再設定ページ
+  /* 既にログイン済みでLPに来た会員向けの短縮フロー(既定OFF・v3.32.0)。
+     ecforceがLPフォームに登録情報を差し込んだ状態(=ログイン中)を検出したら、
+     氏名・生年月日・住所・メール・パスワードを聞かず、
+     「ログイン状態である旨の説明+登録情報の確認」→支払い→確認画面 に短縮する。
+     ⚠️検出は「チャットが触る前のフォームに既に値が入っているか」だけで判定する。
+     新規のお客様は必ず空なので、誤って入力を飛ばす事故は起きない(外したら従来フロー)。
+     お客様が変更しない限り、チャットはフォームの登録値を上書きしない */
+  memberStart: false,
   paymentChoices: null,            // 支払い選択肢の手動指定(通常はLPフォームから自動生成されるので不要)
   /* 支払いボタンの表示文言をタグから変更(キー=元の文言に含まれる語、値=表示したい文言)。
      例: paymentLabels: { 'クレジット': 'クレジットカード【手数料0円】' }
@@ -742,6 +755,9 @@ var CSS = ''
 /* --- 入力カード --- */
 + '.card{background:#fff;border-radius:12px;border:.5px solid rgba(0,0,0,.1);padding:13px 13px 11px;margin-left:36px;box-shadow:0 1px 4px rgba(0,0,0,.07);animation:hsUp .18s ease both}'
 + '.card label{display:block;font-size:11.5px;color:#9a7a85;font-weight:600;letter-spacing:.03em;margin-bottom:5px}'
+/* ログイン済み会員の登録情報カード(memberStart) */
++ '.mi{font-size:13px;line-height:1.8;color:#3a2a30}'
++ '.mi-name{font-weight:700;font-size:14.5px;margin-bottom:2px}'
 + '.card .fld{margin-bottom:9px}'
 + '.card input,.card select{width:100%;border:1px solid rgba(0,0,0,.14);border-radius:8px;padding:11px 12px;font-size:16px;font-family:inherit;color:#3a2a30;background:#fdfbfc;outline:none;transition:border-color .15s;-webkit-appearance:none;appearance:none}'
 + '.card input:focus,.card select:focus{border-color:' + CFG.theme.brand + ';background:#fff}'
@@ -938,6 +954,15 @@ function showCloseConfirm(cc) {
 function mount() {
   /* 商品名が未設定ならLPから自動取得(商品が変わってもタグ・シナリオの修正不要) */
   if (!CFG.vars.PRODUCT) CFG.vars.PRODUCT = readProductName();
+
+  /* ログイン済み会員の検出は「チャットが何も書き込む前」に行う(memberStart有効LPのみ) */
+  if (CFG.memberStart) {
+    try {
+      memberInfo = readMemberForm();
+      memberFlowActive = !!memberInfo;
+      if (memberFlowActive) track('member_start_detected');
+    } catch (eMs) {}
+  }
 
   /* 与信NGで弾き返された画面か(paymentFallback設定LPのみ)。hideFormの判定より先に見る */
   try { payNG = paymentNGRecovery(); } catch (ePf) {}
@@ -1312,6 +1337,8 @@ function showDupEmailGuide(em) {
 function inlineEmailDupCheck(form) {
   /* editMode中もチェックする(「別のメールで入力する」で修正した新メールの再検証に必要) */
   if (!CFG.emailDupCheck || transferStarted) return;
+  /* 既にログイン済みの会員には出さない(自分のメールで「既に登録があります」は的外れ) */
+  if (memberFlowActive) return;
   var em = answers.email;
   if (!em || em === lastDupCheckedEmail) return;
   lastDupCheckedEmail = em;
@@ -1436,6 +1463,17 @@ async function runStepInner(i) {
   current = i;
   if (i >= steps.length) return;
   var s = steps[i];
+
+  /* ログイン済み会員(memberStart)は入力ステップを出さず、確認カード→支払いへ短縮する。
+     冒頭の演出・画像・定期条件の案内はそのまま流す。確認画面の✎(editMode)は通常どおり */
+  if (memberFlowActive && !editMode && memberSkippableStep(s)) {
+    if (!memberConfirmed) return renderMemberConfirm(i);
+    if (memberEditingAddr && (s.type === 'address' || s.type === 'zip' || s.key === 'addr')) {
+      memberEditingAddr = false;      // お届け先変更のこの1ステップだけ通す
+    } else {
+      return runStep(i + 1);          // 残りの入力ステップは飛ばす
+    }
+  }
 
   /* --- 演出系 --- */
   if (s.type === 'stock') {
@@ -1819,6 +1857,139 @@ function renderMemberLogin(msg, contFn, contLabel) {
       showError('通信に失敗しました。もう一度お試しください');
     });
   });
+}
+
+/* ---------- ログイン済み会員の短縮フロー(memberStart・既定OFF・v3.32.0) ----------
+   ecforceはログイン中の会員がLPに来ると、注文フォームに登録情報を差し込んで描画する
+   (2026-08-07に実LPで確認: 氏名・郵便番号・住所・メールが入り、登録カードがあれば
+    select#card-id も出る)。この状態を「チャットが何か書き込む前」に検出して、
+   氏名・生年月日・住所・メール・パスワードを聞かない短縮フローに切り替える。
+   ⚠️新規のお客様はこれらが必ず空なので、誤検出で入力を飛ばすことはない */
+var memberInfo = null, memberFlowActive = false, memberConfirmed = false, memberEditingAddr = false;
+function readMemberForm() {
+  try {
+    var g = function (n) { var el = document.querySelector('[name="' + n + '"]'); return el ? String(el.value || '').trim() : ''; };
+    var prefEl = document.querySelector('[name="order[billing_address_attributes][prefecture_id]"]');
+    var prefTxt = '';
+    if (prefEl && prefEl.options && prefEl.selectedIndex >= 0) {
+      prefTxt = ((prefEl.options[prefEl.selectedIndex] || {}).text || '').trim();
+      if (PREFS.indexOf(prefTxt) < 0) prefTxt = '';   // 「選択してください」等は無視
+    }
+    var info = {
+      name:  g('order[billing_address_attributes][name01]'),
+      kana:  g('order[billing_address_attributes][kana01]'),
+      zip:   g('order[billing_address_attributes][zip01]').replace(/\D/g, ''),
+      pref:  prefTxt,
+      addr1: g('order[billing_address_attributes][addr01]'),
+      addr2: g('order[billing_address_attributes][addr02]'),
+      tel:   g('order[billing_address_attributes][tel01]'),
+      email: g('order[email]') || g('order[customer_attributes][email]'),
+    };
+    /* 氏名+(郵便番号 or 住所)が既に入っている時だけ「ログイン済み」とみなす */
+    if (!info.name || !(info.zip || info.addr1)) return null;
+    return info;
+  } catch (e) { return null; }
+}
+/* 短縮フローで出さない(=登録情報で足りる)入力ステップか */
+function memberSkippableStep(s) {
+  if (!s) return false;
+  if (s.type === 'summary' || s.type === 'card' || s.type === 'pf_submit') return false;
+  if (s.key === 'payment') return false;
+  return s.type === 'fields' || s.type === 'zip' || s.type === 'birth'
+      || s.type === 'address' || s.type === 'choice';
+}
+/* LPがログイン中でもパスワード欄を必須表示するテーマ向けの保険 */
+function memberNeedsPassword() {
+  try {
+    var el = document.querySelector('[name="order[customer_attributes][password]"]');
+    return !!(el && !el.value && el.offsetParent);
+  } catch (e) { return false; }
+}
+function renderMemberPasswordAsk(done) {
+  botBubble('セキュリティ保護のため、パスワードのみご入力ください🙏');
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = '<div class="fld"><label>パスワード</label>'
+    + '<input id="ms-pw" type="password" autocomplete="current-password"></div>'
+    + '<button class="go">次へ →</button>';
+  msgsEl.appendChild(card); scrollBottom();
+  card.querySelector('.go').addEventListener('click', function () {
+    var v = card.querySelector('#ms-pw').value;
+    if (!v) return showError('パスワードを入力してください');
+    clearCards();
+    answers.password = v;
+    userBubble('••••••••');
+    done();
+  });
+  maybeFocus(card.querySelector('#ms-pw'));
+}
+function memberGoPayment() {
+  var go = function () {
+    var pi = stepIndexByKey('payment');
+    runStep(pi >= 0 ? pi : summaryIndex());
+  };
+  if (memberNeedsPassword()) return renderMemberPasswordAsk(go);
+  go();
+}
+/* ログイン状態の説明+登録情報の確認カード。
+   「急に個人情報が出てきて怖い」を避けるため、必ず理由を先に伝える(保積さん指定) */
+function renderMemberConfirm(i) {
+  memberConfirmed = true;
+  track('member_start_view');
+  var m = memberInfo;
+  /* 確認画面や✎修正で使えるよう、回答として保持する(値はフォームと同じなので上書きしても無害) */
+  if (m.name)  answers.name_full = m.name;
+  if (m.kana)  answers.kana_full = m.kana;
+  if (m.zip)   answers.zip = m.zip;
+  if (m.pref)  answers.pref = m.pref;
+  if (m.addr1) answers.addr1 = m.addr1;
+  if (m.addr2) answers.addr2 = m.addr2;
+  if (m.tel)   answers.tel = m.tel;
+  if (m.email) answers.email = m.email;
+
+  botBubble('現在、会員としてログインされた状態です👤\nご登録の情報を読み込みましたので、\n入力なしでそのままご注文いただけます✨');
+  var card = document.createElement('div');
+  card.className = 'card mi-card';
+  var addrLine = [m.pref, m.addr1, m.addr2].filter(Boolean).join(' ');
+  card.innerHTML = '<div class="mi">'
+    + (m.name  ? '<div class="mi-name">' + esc(m.name) + ' 様</div>' : '')
+    + (m.zip   ? '<div>〒' + esc(m.zip.length === 7 ? m.zip.slice(0, 3) + '-' + m.zip.slice(3) : m.zip) + '</div>' : '')
+    + (addrLine ? '<div>' + esc(addrLine) + '</div>' : '')
+    + (m.tel   ? '<div>📞 ' + esc(m.tel) + '</div>' : '')
+    + (m.email ? '<div>✉️ ' + esc(m.email) + '</div>' : '')
+    + '</div>';
+  msgsEl.appendChild(card);
+
+  var wrapC = document.createElement('div');
+  wrapC.className = 'choices';
+  var ok = document.createElement('button');
+  ok.className = 'ch';
+  ok.textContent = 'この内容で進む';
+  ok.addEventListener('click', function () {
+    clearCards();
+    userBubble('この内容で進む');
+    track('member_start_ok');
+    memberGoPayment();
+  });
+  var ch = document.createElement('button');
+  ch.className = 'ch';
+  ch.textContent = 'お届け先を変更する';
+  ch.addEventListener('click', function () {
+    clearCards();
+    userBubble('お届け先を変更する');
+    track('member_start_change_addr');
+    memberEditingAddr = true;
+    var ai = stepIndexByKey('addr');
+    if (ai < 0) ai = stepIndexByKey('zip');
+    if (ai < 0) return memberGoPayment();
+    ['zip', 'pref', 'addr1', 'addr2', 'tel'].forEach(function (k) {
+      if (answers[k] != null) prefill[k] = answers[k];
+    });
+    runStep(ai);
+  });
+  wrapC.appendChild(ok);
+  wrapC.appendChild(ch);
+  msgsEl.appendChild(wrapC); scrollBottom();
 }
 
 /* 送信後にecforceが「メールアドレスは既に登録済み」で弾いて戻ってきた画面かを判定 */
