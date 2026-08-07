@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.28.4
+    HugSkin 獲得チャットボット v3.29.0
+    (v3.29.0: 会員のチャット内ログイン memberLogin を追加(既定OFF)。
+     メール既登録の検知時に、別タブのログイン画面へ誘導する代わりに
+     チャット内でパスワードを聞いてAJAXでecforceにログイン→再読込→
+     支払い方法から再開して注文完了(Teaflex/form-plusのUXの移植)。
+     タグに memberLogin: true で有効化。emailDupCheckとセット推奨)
     (v3.28.4: メール入力時点の既登録チェック emailDupCheck を追加(既定OFF)。
      メール確定の転記直後にメール欄だけ change/blur を発火してecforceの
      既登録チェックを誘発し、「＊ 既に使われています」表示を検知したら
@@ -226,6 +231,16 @@ var DEFAULTS = {
       このオプションはメール欄1箇所だけ意図的に発火させる)
      ⚠️ hideForm併用不可(エラーが画面に出ないため検知できない) */
   emailDupCheck: false,
+  /* 会員のチャット内ログイン(既定OFF・v3.29.0)。メール既登録を検知した時の案内を
+     「ログイン画面を開く(別タブ)」ではなく「チャット内でパスワードを聞いてその場で
+     ログイン」に切り替える(Teaflex/form-plusで実証済みのUXの移植)。
+     ログイン成功→ページ再読込→ecforceがログイン済み状態でフォームを再描画
+     (氏名・住所は登録情報で自動入力される)→チャットは支払い方法から再開して注文完了。
+     タグに memberLogin: true で有効化(emailDupCheck とセット推奨)。
+     ログインPOSTのフォーム構造は 2026-08-07 に hugskin.shop/shop/customers/sign_in
+     実ページで確認(customer[email]/customer[password]/authenticity_token/sign_in_route) */
+  memberLogin: false,
+  forgotUrl: 'https://hugskin.shop/shop/customers/password/new',  // パスワード再設定ページ
   paymentChoices: null,            // 支払い選択肢の手動指定(通常はLPフォームから自動生成されるので不要)
   /* 支払いボタンの表示文言をタグから変更(キー=元の文言に含まれる語、値=表示したい文言)。
      例: paymentLabels: { 'クレジット': 'クレジットカード【手数料0円】' }
@@ -932,6 +947,8 @@ function mount() {
 
   /* メール既登録エラー・与信NGで戻ってきた画面では、設定に関わらず自動で開いて案内する */
   if (payNG || detectDupEmailError()) return openPanel();
+  /* 会員ログイン直後の再読込では、autoOpen設定に関わらず自動で開いて支払いから再開 */
+  if (CFG.memberLogin && memberResumePeek()) return openPanel();
   watchDupEmailLate();   // エラーバナーが読込後に出るLPテーマ対策(遅延検知)
 
   var a = String(CFG.autoOpen || 'manual');
@@ -1159,6 +1176,15 @@ function startFlow() {
   try { if (window.clarity) window.clarity('set', 'hs_scenario', CFG.scenario); } catch (e) {}
   /* 与信NGで弾かれて戻ってきた画面なら、通常フローではなく短縮リカバリーを開始 */
   if (payNG) { runPaymentRecovery(); return; }
+  /* 会員ログイン直後の再読込(memberLogin): 氏名・住所等は登録情報が使われるので
+     質問せず、支払い方法から再開する */
+  if (CFG.memberLogin && memberResumeTake()) {
+    track('member_login_resume');
+    botBubble('ログインしました✨\nご登録のお名前・ご住所でご注文いただけます。\nお支払い方法をお選びください！');
+    var mIdx = stepIndexByKey('payment');
+    runStep(mIdx >= 0 ? mIdx : 0);
+    return;
+  }
   /* 送信後「メール既登録」で弾かれて戻ってきた画面なら、先にログイン案内を出す */
   if (detectDupEmailError()) {
     dupGuideShown = true;
@@ -1521,6 +1547,8 @@ function renderChoice(s, i) {
 /* 会員向けログイン誘導(登録済みメールは新規フォームでecforceに弾かれるため)。
    contFn = 「このまま入力を続ける」を押した時の続きの処理 */
 function renderLoginGuide(msg, contFn, contLabel) {
+  /* memberLogin有効LPでは、別タブ誘導ではなくチャット内ログインに切り替える */
+  if (CFG.memberLogin) return renderMemberLogin(msg, contFn, contLabel);
   botBubble(msg || '会員の方はログインしてからのご注文がスムーズです✨');
   var wrapC = document.createElement('div');
   wrapC.className = 'choices';
@@ -1545,6 +1573,107 @@ function renderLoginGuide(msg, contFn, contLabel) {
   wrapC.appendChild(loginBtn);
   wrapC.appendChild(contBtn);
   msgsEl.appendChild(wrapC); scrollBottom();
+}
+
+/* ---------- 会員のチャット内ログイン(memberLogin・既定OFF・v3.29.0) ----------
+   Teaflex(form-plus)で実証されているUXの移植(2026-08-07に実LPで動作を観察):
+   既登録メール検知 → チャット内でパスワード入力 → ecforceへAJAXログイン
+   → 成功したらページ再読込 → ecforceがログイン済みフォームを描画(住所等は登録情報)
+   → チャットは支払い方法から再開して注文完了。ログイン画面への遷移なし。 */
+var MEMBER_RESUME_KEY = 'hs_member_resume';
+function memberResumeSet() {
+  try { sessionStorage.setItem(MEMBER_RESUME_KEY, String(Date.now())); } catch (e) {}
+}
+function memberResumePeek() {
+  try {
+    var v = sessionStorage.getItem(MEMBER_RESUME_KEY);
+    return !!v && Date.now() - parseInt(v, 10) < 10 * 60 * 1000;   // 10分で失効
+  } catch (e) { return false; }
+}
+function memberResumeTake() {
+  var ok = memberResumePeek();
+  try { sessionStorage.removeItem(MEMBER_RESUME_KEY); } catch (e) {}   // 1回使い切り
+  return ok;
+}
+function signInPath() {
+  try { return new URL(CFG.loginUrl, location.href).pathname; } catch (e) { return '/shop/customers/sign_in'; }
+}
+/* ecforce(Devise)へのAJAXログイン。ログインページを取得してCSRFトークンを拾い、
+   フォームPOST。成功=別ページへリダイレクト / 失敗=sign_inを再表示、で判定 */
+function doMemberLogin(email, pw) {
+  var path = signInPath();
+  return fetch(path, { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (html) {
+    var tok = (html.match(/name="authenticity_token"[^>]*value="([^"]+)"/) || [])[1]
+           || (html.match(/name="csrf-token" content="([^"]+)"/) || [])[1] || '';
+    var route = (html.match(/name="sign_in_route"[^>]*value="([^"]*)"/) || [])[1] || '';
+    var body = 'authenticity_token=' + encodeURIComponent(tok)
+      + '&customer%5Bemail%5D=' + encodeURIComponent(email)
+      + '&customer%5Bpassword%5D=' + encodeURIComponent(pw)
+      + '&customer%5Bremember_me%5D=0'
+      + (route ? '&sign_in_route=' + encodeURIComponent(route) : '');
+    return fetch(path, {
+      method: 'POST', credentials: 'same-origin', redirect: 'follow',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body,
+    });
+  }).then(function (r) {
+    return r.ok && String(r.url || '').indexOf('sign_in') < 0;
+  });
+}
+/* チャット内ログインカード(パスワード+必要ならメールも)。
+   contFn = 会員ログインを使わず入力を続ける場合の続きの処理 */
+function renderMemberLogin(msg, contFn, contLabel) {
+  botBubble(msg || 'ご入力のメールアドレスは既にご登録があるようです💡');
+  botBubble('パスワードをご入力いただければ、\nこのままチャットでご注文いただけます✨\n（ご登録のお名前・ご住所はそのまま使えます）');
+  var emailKnown = !!answers.email;
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML =
+    (emailKnown ? '' : '<div class="fld"><label>メールアドレス</label><input type="email" class="ml-em" inputmode="email" autocomplete="email" placeholder="例：hanako@example.com"></div>')
+    + '<div class="fld"><label>パスワード</label><input type="password" class="ml-pw" autocomplete="current-password"></div>'
+    + '<div style="font-size:11px;margin:-2px 0 9px"><a href="' + esc(CFG.forgotUrl) + '" target="_blank" rel="noopener" style="color:#9a7a85">パスワードを忘れた方はこちら</a></div>'
+    + '<button class="go">ログインして注文にすすむ →</button>';
+  msgsEl.appendChild(card);
+  var wrapC = document.createElement('div');
+  wrapC.className = 'choices';
+  var contBtn = document.createElement('button');
+  contBtn.className = 'ch';
+  contBtn.textContent = contLabel || 'このまま入力を続ける';
+  contBtn.addEventListener('click', function () {
+    clearCards();
+    userBubble(contBtn.textContent);
+    track('login_skip');
+    contFn();
+  });
+  wrapC.appendChild(contBtn);
+  msgsEl.appendChild(wrapC); scrollBottom();
+  var go = card.querySelector('.go');
+  go.addEventListener('click', function () {
+    var emEl = card.querySelector('.ml-em');
+    var em = emailKnown ? answers.email : (emEl ? emEl.value.trim() : '');
+    var pw = card.querySelector('.ml-pw').value;
+    if (!em) return showError('メールアドレスを入力してください');
+    if (!pw) return showError('パスワードを入力してください');
+    clearErrors();
+    go.disabled = true; go.textContent = 'ログインしています…';
+    track('member_login_try');
+    doMemberLogin(em, pw).then(function (ok) {
+      if (ok) {
+        track('member_login_ok');
+        memberResumeSet();
+        botBubble('ログインできました✨\nご登録の情報を読み込みます…');
+        scrollBottom();
+        setTimeout(function () { location.reload(); }, 800);
+      } else {
+        track('member_login_ng');
+        go.disabled = false; go.textContent = 'ログインして注文にすすむ →';
+        showError('パスワードが違うようです。もう一度お試しください（お忘れの場合は「こちら」から再設定できます）');
+      }
+    }).catch(function () {
+      go.disabled = false; go.textContent = 'ログインして注文にすすむ →';
+      showError('通信に失敗しました。もう一度お試しください');
+    });
+  });
 }
 
 /* 送信後にecforceが「メールアドレスは既に登録済み」で弾いて戻ってきた画面かを判定 */
