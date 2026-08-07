@@ -1,5 +1,9 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.30.1
+    HugSkin 獲得チャットボット v3.31.0
+    (v3.31.0: 登録済みカードがある会員は、支払い方法の選択自体を
+     「このカードで進む / 別のカードにする / 後払い」の3択に差し替える。
+     カード入力ステップは出さない(「別のカード」を選んだ時だけ入力)。
+     回答バブル・確認画面の✎からの修正も通常ステップと同じように効く)
     (v3.30.1: 登録済みカードの検出を実LP実測に合わせて修正。ecforceは
      select#card-id (order[payment_attributes][source_id]) で登録済みカードを
      表し、選択中は手入力欄を隠す(2026-08-07 ログイン状態の実LPで確認)。
@@ -1472,6 +1476,11 @@ async function runStepInner(i) {
   if (s.type === 'card' && (answers.payment_label || '').indexOf('クレジット') < 0) {
     return editMode ? next(i) : runStep(i + 1);
   }
+  /* 登録済みカードで進むと決まっている場合は入力を求めない
+     (確認画面の✎から呼ばれた時=editModeだけは、選び直せるように表示する) */
+  if (s.type === 'card' && answers.card_registered && !editMode) {
+    return runStep(i + 1);
+  }
   /* 与信NGリカバリーの最終ステップ: 確認画面を挟まず即転記→自動送信 */
   if (s.type === 'pf_submit') {
     track('payment_ng_retry');
@@ -1574,15 +1583,33 @@ function renderChoice(s, i) {
       return { label: lbl, value: c.value };
     });
   }
+  /* 登録済みカードがある会員(ログイン中)は、支払い方法の選択そのものを
+     「このカードで進む / 別のカードにする / 後払い」の3択に差し替える(v3.31.0) */
+  if (s.key === 'payment' && CFG.registeredCard !== false) {
+    var regNow = registeredCardInfo() || regCardCache;
+    if (regNow && choiceList.some(function (c) { return c.label.indexOf('クレジット') >= 0; })) {
+      return renderPaymentWithRegisteredCard(s, i, choiceList, regNow);
+    }
+  }
   choiceList.forEach(function (c) {
     var b = document.createElement('button');
     b.className = 'ch';
     b.textContent = c.label;
     b.addEventListener('click', function () {
+      pickChoice(s, i, c);
+    });
+    wrapC.appendChild(b);
+  });
+  msgsEl.appendChild(wrapC); scrollBottom();
+}
+
+/* 選択肢を確定した時の共通処理(通常の選択・登録済みカードの3択で共用)。
+   displayLabel を渡すと、回答バブルの文言だけ差し替えられる(値・payment_labelは同じ) */
+function pickChoice(s, i, c, displayLabel) {
       clearCards();
       answers[s.key] = c.value;
       answers[s.key + '_label'] = c.label;
-      userBubble(c.label, s.key);
+      userBubble(displayLabel || c.label, s.key);
       if (!editMode) { doneCount++; progress(); }
       track('step_' + s.key);
       /* 後払いを選んだら訴求バナー(codNoticeImage)と規約・注意文(codNotice)を表示。
@@ -1605,6 +1632,57 @@ function renderChoice(s, i) {
         return renderLoginGuide(s.memberMsg, function () { next(i); });
       }
       next(i);
+}
+
+/* 登録済みカードがある会員向けの支払いステップ(v3.31.0)。
+   「クレジット/後払い」を聞く代わりに、登録済みカードを提示して3択にする:
+     ①このカードで進む ②別のカードにする ③(後払い等の非クレジット選択肢)
+   選択後の修正(回答バブル/確認画面の✎)も通常ステップと同じように効く */
+function renderPaymentWithRegisteredCard(s, i, choiceList, reg) {
+  var credit = null, others = [];
+  choiceList.forEach(function (c) {
+    if (!credit && c.label.indexOf('クレジット') >= 0) credit = c; else others.push(c);
+  });
+  botBubble('ご登録済みのクレジットカードが確認できました💳\n' + reg.label
+    + '\nこのカードでお手続きしてよろしいでしょうか？');
+  var wrapC = document.createElement('div');
+  wrapC.className = 'choices choices-pay';
+
+  var yes = document.createElement('button');
+  yes.className = 'ch';
+  yes.textContent = 'このカードで進む';
+  yes.addEventListener('click', function () {
+    reselectRegisteredCard(reg);          // 別カードに切り替えていた場合は戻す
+    cardRegisteredDeclined = false;
+    answers.card_registered = true;
+    answers.card_registered_label = reg.label;
+    track('card_registered_use');
+    pickChoice(s, i, credit, 'このカードで進む（' + reg.label + '）');
+  });
+  wrapC.appendChild(yes);
+
+  var other = document.createElement('button');
+  other.className = 'ch';
+  other.textContent = '別のカードにする';
+  other.addEventListener('click', function () {
+    cardRegisteredDeclined = true;
+    answers.card_registered = false;
+    delete answers.card_registered_label;
+    track('card_registered_declined');
+    releaseRegisteredCard(reg);           // ecforceを「新しく登録する」に切り替え
+    pickChoice(s, i, credit, '別のカードにする');
+  });
+  wrapC.appendChild(other);
+
+  others.forEach(function (c) {
+    var b = document.createElement('button');
+    b.className = 'ch';
+    b.textContent = c.label;
+    b.addEventListener('click', function () {
+      cardRegisteredDeclined = false;
+      answers.card_registered = false;
+      delete answers.card_registered_label;
+      pickChoice(s, i, c);
     });
     wrapC.appendChild(b);
   });
@@ -2312,6 +2390,7 @@ function wantCvv() {
 function registeredCardSelect() {
   return document.querySelector('#card-id, [name="order[payment_attributes][source_id]"]');
 }
+var regCardCache = null;   // 一度検出した登録済みカード(「別のカード」に切り替えた後も覚えておく)
 function registeredCardInfo() {
   try {
     var sel = registeredCardSelect();
@@ -2320,7 +2399,9 @@ function registeredCardInfo() {
       if (v && v !== '0') {
         var opt = sel.options[sel.selectedIndex];
         var txt = opt ? (opt.text || '').trim() : '';
-        return { sel: sel, label: txt || '登録済みのカード' };
+        var info = { sel: sel, value: v, label: txt || '登録済みのカード' };
+        regCardCache = { value: info.value, label: info.label };
+        return info;
       }
       return null;   // 「新しく登録する」が選ばれている = 通常のカード入力
     }
@@ -2331,6 +2412,16 @@ function registeredCardInfo() {
     if (!/[*＊●・x]/i.test(numVal) && !numEl.readOnly && !numEl.disabled) return null;
     return { sel: null, label: numVal };
   } catch (e) { return null; }
+}
+/* 「このカードで進む」を選び直した時: LPのセレクトを登録済みカードに戻す */
+function reselectRegisteredCard(reg) {
+  try {
+    var sel = registeredCardSelect();
+    if (sel && reg && reg.value && String(sel.value) !== String(reg.value)) {
+      sel.value = reg.value;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  } catch (e) {}
 }
 /* 「違うカードにする」を選んだ時: ecforceを新しいカード入力モードに戻す。
    登録済みカードのセレクトを「新しく登録する」(value=0)に切り替えると、
