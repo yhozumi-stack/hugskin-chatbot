@@ -1,5 +1,12 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.29.0
+    HugSkin 獲得チャットボット v3.29.1
+    (v3.29.1: emailDupCheck の検知方式を「ecforceの既登録チェックAPIを直接
+     問い合わせる」方式に変更(2026-08-07に実LPで特定:
+     GET /lp/email?fieldId=email&fieldValue=… → ["email",false]=既登録)。
+     旧方式(フォームのchange発火→エラー文言をDOM監視)は、APIは走るのに
+     validationEngineがプロンプトを描画せず検知できないケースがあった。
+     新方式はフォームに一切触らず確実・hideForm併用も可。APIが無いLPでは
+     旧方式へ自動フォールバック)
     (v3.29.0: 会員のチャット内ログイン memberLogin を追加(既定OFF)。
      メール既登録の検知時に、別タブのログイン画面へ誘導する代わりに
      チャット内でパスワードを聞いてAJAXでecforceにログイン→再読込→
@@ -229,8 +236,14 @@ var DEFAULTS = {
      表示を検知したら、送信を待たずその場でログイン案内を出す。
      (通常の転記はAJAX再描画事故=v3.9.1の教訓を避けるためinputしか発火しない。
       このオプションはメール欄1箇所だけ意図的に発火させる)
-     ⚠️ hideForm併用不可(エラーが画面に出ないため検知できない) */
+     v3.29.1〜は ecforce の既登録チェックAPIを直接叩く方式(下記 emailCheckUrl)。
+     画面のエラー表示に依存しないので hideForm 併用可・フォームにも一切触らない */
   emailDupCheck: false,
+  /* ecforceの既登録チェックAPI(2026-08-07に hugskin.shop 実LPで確認)。
+     GET /lp/email?fieldId=email&fieldValue=<メール> → ["email",false]=既登録 / ["email",true]=未登録
+     (LPのメール欄の validate[...ajax[emailCheck]] が内部で叩いているのと同じもの)。
+     万一APIが無いLPでは、従来のDOM文言検知に自動フォールバックする */
+  emailCheckUrl: '/lp/email',
   /* 会員のチャット内ログイン(既定OFF・v3.29.0)。メール既登録を検知した時の案内を
      「ログイン画面を開く(別タブ)」ではなく「チャット内でパスワードを聞いてその場で
      ログイン」に切り替える(Teaflex/form-plusで実証済みのUXの移植)。
@@ -1253,13 +1266,58 @@ function detectDupEmailInline() {
     return /(既に|すでに)\s*(使われています|登録済みです|登録されています)/.test(t);
   } catch (e) { return false; }
 }
+/* 既登録が判明した時にチャットを会員案内へ切り替える(共通処理)。
+   API応答は次ステップの描画中に返ってくることがあるため、
+   dupPaused で以降の描画を止めてから案内を出す(案内の下に質問が出るのを防ぐ) */
+var dupPaused = false, dupResumeIdx = null;
+function showDupEmailGuide(em) {
+  if (inlineDupGuideShown || transferStarted) return;
+  if (answers.email !== em) return;          // 既に別メールへ修正済みなら何もしない
+  inlineDupGuideShown = true;
+  dupPaused = true;
+  track('dup_email_inline');
+  clearCards();                              // 先に進んでいた質問カードは片付ける
+  renderLoginGuide(
+    'ご入力のメールアドレスは既にご登録があるようです💡\n会員の方はログインしていただくとスムーズです✨\n（このままだと新規のご注文を完了できない場合があります）',
+    function () { inlineDupGuideShown = false; dupPaused = false; dupResumeIdx = null; startEdit('email'); },
+    '別のメールアドレスで入力する'
+  );
+  /* 案内より後に描画が滑り込んだ場合の保険(演出のtypingが先行しているケース) */
+  var keep = [].slice.call(msgsEl.querySelectorAll('.card, .choices'));
+  setTimeout(function () {
+    if (!dupPaused) return;
+    msgsEl.querySelectorAll('.card, .choices').forEach(function (e) {
+      if (keep.indexOf(e) < 0) e.remove();
+    });
+  }, 1200);
+}
 function inlineEmailDupCheck(form) {
   /* editMode中もチェックする(「別のメールで入力する」で修正した新メールの再検証に必要) */
   if (!CFG.emailDupCheck || transferStarted) return;
   var em = answers.email;
   if (!em || em === lastDupCheckedEmail) return;
   lastDupCheckedEmail = em;
-  /* ecforceの既登録チェックを誘発(メール欄だけ change/blur/focusout を発火) */
+  /* 本命: ecforceの既登録チェックAPIを直接問い合わせる(フォームには触らない)。
+     応答 ["email",false] = 既登録 / ["email",true] = 未登録 */
+  var url = (CFG.emailCheckUrl || '/lp/email')
+    + (CFG.emailCheckUrl && CFG.emailCheckUrl.indexOf('?') >= 0 ? '&' : '?')
+    + 'fieldId=email&fieldValue=' + encodeURIComponent(em);
+  var fellBack = false;
+  var fallback = function () { if (!fellBack) { fellBack = true; domDupEmailCheck(form, em); } };
+  try {
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (txt) {
+        if (txt == null) return fallback();
+        var taken;
+        try { taken = JSON.parse(txt)[1] === false; } catch (e) { return fallback(); }
+        if (taken) showDupEmailGuide(em);
+      })
+      .catch(fallback);
+  } catch (e) { fallback(); }
+}
+/* フォールバック(APIが無いLP用): 旧方式=メール欄のchange/blurを発火してエラー表示を監視 */
+function domDupEmailCheck(form, em) {
   ['order[email]', 'order[customer_attributes][email]'].forEach(function (n) {
     var el = form.querySelector('[name="' + n + '"]');
     if (!el || !el.value) return;
@@ -1269,22 +1327,14 @@ function inlineEmailDupCheck(form) {
       el.dispatchEvent(new Event('focusout', { bubbles: true }));
     } catch (e) {}
   });
-  /* AJAXの往復を1.2秒待ってから約6秒間監視(古いエラー表示への誤反応も減らす) */
   setTimeout(function () {
     var tries = 0;
     var tm = setInterval(function () {
       if (++tries > 10 || transferStarted) return clearInterval(tm);
-      if (answers.email !== em) return clearInterval(tm);   // 別メールに修正済みなら旧チェックは破棄
+      if (answers.email !== em) return clearInterval(tm);
       if (!detectDupEmailInline()) return;
       clearInterval(tm);
-      if (inlineDupGuideShown) return;
-      inlineDupGuideShown = true;
-      track('dup_email_inline');
-      renderLoginGuide(
-        'ご入力のメールアドレスは既にご登録があるようです💡\n会員の方はログインしていただくとスムーズです✨\n（このままだと新規のご注文を完了できない場合があります）',
-        function () { inlineDupGuideShown = false; startEdit('email'); },
-        '別のメールアドレスで入力する'
-      );
+      showDupEmailGuide(em);
     }, 600);
   }, 1200);
 }
@@ -1362,6 +1412,9 @@ async function runStep(i) {
 }
 
 async function runStepInner(i) {
+  /* 既登録メールの会員案内を出している間は、後続ステップを描画しない
+     (emailDupCheck有効LPのみ。案内の下に次の質問が出てしまうのを防ぐ) */
+  if (dupPaused) { dupResumeIdx = i; return; }
   current = i;
   if (i >= steps.length) return;
   var s = steps[i];
