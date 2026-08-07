@@ -244,6 +244,12 @@ var DEFAULTS = {
      (LPのメール欄の validate[...ajax[emailCheck]] が内部で叩いているのと同じもの)。
      万一APIが無いLPでは、従来のDOM文言検知に自動フォールバックする */
   emailCheckUrl: '/lp/email',
+  /* 登録済みカードの確認(v3.30.0・既定ON)。ログイン中の会員がカードを登録済みで
+     LPフォームが「登録済みカードを使う」状態の時、チャットはカード情報を聞かず
+     「このカードで進めてよいか」を確認するだけにする(違うカードも選べる)。
+     未ログインの新規客ではこの状態にならないため既存LPの挙動は変わらない。
+     false にすると常にカード入力を聞く(従来動作) */
+  registeredCard: true,
   /* 会員のチャット内ログイン(既定OFF・v3.29.0)。メール既登録を検知した時の案内を
      「ログイン画面を開く(別タブ)」ではなく「チャット内でパスワードを聞いてその場で
      ログイン」に切り替える(Teaflex/form-plusで実証済みのUXの移植)。
@@ -1351,7 +1357,7 @@ function next(i) {
       return;
     }
     if (s.key === 'payment' && (answers.payment_label || '').indexOf('クレジット') >= 0
-        && !answers.card_number && stepIndexByKey('card') > i) {
+        && !answers.card_number && !answers.card_registered && stepIndexByKey('card') > i) {
       runStep(stepIndexByKey('card'));
       return;
     }
@@ -2284,7 +2290,89 @@ function wantCvv() {
   return !!document.querySelector(CVV_SELECTOR);   // 'auto' = LPにCVV欄があれば聞く
 }
 
+/* ---------- 登録済みカードの検出(v3.30.0) ----------
+   ログイン中の会員がカードを登録している場合、ecforceはLPフォームの
+   カード欄を「登録済みカードを使う」状態で描画する(gateway_card_seq に値が入り、
+   番号欄はマスク表示/読み取り専用になる)。この状態でチャットがカード入力を
+   求めるのは誤りなので、確認だけして入力ステップをスキップする。
+   ※未ログインの新規客ではこの状態にならない=既存LPの挙動は変わらない */
+function registeredCardInfo() {
+  try {
+    var seqEl = document.querySelector('#input-cc-gateway-card-seq, [name="order[payment_attributes][source_attributes][gateway_card_seq]"]');
+    var hasSeq = !!(seqEl && String(seqEl.value || '').trim());
+    var numEl = document.querySelector('#input-cc-number, [name="order[payment_attributes][source_attributes][number]"]');
+    var numVal = numEl ? String(numEl.value || '').trim() : '';
+    var masked = /[*＊●・x]/i.test(numVal) ? numVal : '';
+    var locked = !!(numEl && (numEl.readOnly || numEl.disabled) && numVal);
+    if (!hasSeq && !masked && !locked) return null;
+    var digits = numVal.replace(/\D/g, '');
+    return {
+      seqEl: seqEl,
+      label: masked || (digits.length >= 4 ? '**** **** **** ' + digits.slice(-4) : '登録済みのカード'),
+    };
+  } catch (e) { return null; }
+}
+/* 「違うカードにする」を選んだ時: ecforceを新しいカード入力モードに戻す。
+   登録済みカードの識別子(gateway_card_seq)を空にし、番号欄のロックを解除する */
+function releaseRegisteredCard(info) {
+  try {
+    if (info && info.seqEl) {
+      info.seqEl.value = '';
+      info.seqEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    var numEl = document.querySelector('#input-cc-number, [name="order[payment_attributes][source_attributes][number]"]');
+    if (numEl) { numEl.readOnly = false; numEl.disabled = false; numEl.value = ''; }
+    /* ecforceが「別のカードを利用する」等の切替UIを出している場合はそれも押す */
+    var sw = [].slice.call(document.querySelectorAll('a,button,label,input[type=radio]')).filter(function (e) {
+      var t = (e.innerText || e.value || '') + ' ' + (e.className || '');
+      return /別のカード|新しいカード|新規カード|別のクレジット/.test(t) && !!e.offsetParent;
+    })[0];
+    if (sw) sw.click();
+  } catch (e) {}
+}
+/* 登録済みカードの確認ステップ(はい / 違うカードにする) */
+function renderRegisteredCardConfirm(s, i, info) {
+  botBubble('ご登録済みのクレジットカードが確認できました💳\n' + info.label
+    + '\nこのカードでお手続きしてよろしいでしょうか？');
+  var wrapC = document.createElement('div');
+  wrapC.className = 'choices';
+  var yes = document.createElement('button');
+  yes.className = 'ch';
+  yes.textContent = 'はい、このカードで進む';
+  yes.addEventListener('click', function () {
+    clearCards();
+    answers.card_registered = true;
+    answers.card_registered_label = info.label;
+    userBubble('登録済みのカードで進む', 'card');
+    if (!editMode) { doneCount++; progress(); }
+    track('step_card_registered');
+    next(i);
+  });
+  var other = document.createElement('button');
+  other.className = 'ch';
+  other.textContent = '違うカードにする';
+  other.addEventListener('click', function () {
+    clearCards();
+    answers.card_registered = false;
+    delete answers.card_registered_label;
+    cardRegisteredDeclined = true;
+    userBubble('違うカードにする');
+    track('card_registered_declined');
+    releaseRegisteredCard(info);
+    renderCard(s, i);
+  });
+  wrapC.appendChild(yes);
+  wrapC.appendChild(other);
+  msgsEl.appendChild(wrapC); scrollBottom();
+}
+var cardRegisteredDeclined = false;
+
 function renderCard(s, i) {
+  /* 登録済みカードがあるなら、入力ではなく確認を出す(タグで registeredCard: false にすると無効) */
+  if (CFG.registeredCard !== false && !cardRegisteredDeclined && !answers.card_number) {
+    var reg = registeredCardInfo();
+    if (reg) return renderRegisteredCardConfirm(s, i, reg);
+  }
   botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
@@ -2499,6 +2587,11 @@ async function renderSummary(s) {
     rows += '<tr data-k="' + k + '"><td>' + LABELS[k] + '</td><td>' + esc(v) + '</td><td class="ed">✎</td></tr>';
   });
   if (answers.payment_label) rows += '<tr data-k="payment"><td>' + LABELS.payment + '</td><td>' + esc(answers.payment_label) + '</td><td class="ed">✎</td></tr>';
+  /* 登録済みカードを使う場合(会員ログイン時) */
+  if (answers.card_registered && (answers.payment_label || '').indexOf('クレジット') >= 0) {
+    rows += '<tr data-k="card"><td>' + LABELS.card + '</td><td>'
+      + esc(answers.card_registered_label || '登録済みのカード') + '（ご登録済み）</td><td class="ed">✎</td></tr>';
+  }
   /* カードはマスク表示(クレジット選択時のみ) */
   if (answers.card_number && (answers.payment_label || '').indexOf('クレジット') >= 0) {
     rows += '<tr data-k="card"><td>' + LABELS.card + '</td><td>**** **** **** ' + esc(answers.card_number.slice(-4))
