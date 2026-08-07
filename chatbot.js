@@ -1,5 +1,13 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.29.1
+    HugSkin 獲得チャットボット v3.30.1
+    (v3.30.1: 登録済みカードの検出を実LP実測に合わせて修正。ecforceは
+     select#card-id (order[payment_attributes][source_id]) で登録済みカードを
+     表し、選択中は手入力欄を隠す(2026-08-07 ログイン状態の実LPで確認)。
+     当初想定の gateway_card_seq は空のままだった。「違うカードにする」は
+     同セレクトを「新しく登録する」(value=0)に切り替えて手入力欄を出す)
+    (v3.30.0: 登録済みカードがある会員には、カード入力を求めず
+     「このカードで進めてよいか」の確認だけを出す(既定ON・registeredCardで無効化可)。
+     未ログインの新規客ではこの状態にならないため既存LPの挙動は不変)
     (v3.29.1: emailDupCheck の検知方式を「ecforceの既登録チェックAPIを直接
      問い合わせる」方式に変更(2026-08-07に実LPで特定:
      GET /lp/email?fieldId=email&fieldValue=… → ["email",false]=既登録)。
@@ -2291,43 +2299,58 @@ function wantCvv() {
 }
 
 /* ---------- 登録済みカードの検出(v3.30.0) ----------
-   ログイン中の会員がカードを登録している場合、ecforceはLPフォームの
-   カード欄を「登録済みカードを使う」状態で描画する(gateway_card_seq に値が入り、
-   番号欄はマスク表示/読み取り専用になる)。この状態でチャットがカード入力を
+   ログイン中の会員がカードを登録している場合、ecforceはLPフォームに
+   「登録済みカードの選択」セレクトを出す。2026-08-07に実LP(ログイン状態)で実測:
+     <select id="card-id" name="order[payment_attributes][source_id]">
+       <option value="75" selected>************1010 （05/31）</option>
+       <option value="0">新しく登録する</option>
+     </select>
+   登録済みカードが選ばれている間(value が 0/空以外)、手入力欄
+   (#input-cc-number 等)は非表示になる。この状態でチャットがカード入力を
    求めるのは誤りなので、確認だけして入力ステップをスキップする。
-   ※未ログインの新規客ではこの状態にならない=既存LPの挙動は変わらない */
+   ※未ログインの新規客ではこのセレクト自体が存在しない=既存LPの挙動は変わらない */
+function registeredCardSelect() {
+  return document.querySelector('#card-id, [name="order[payment_attributes][source_id]"]');
+}
 function registeredCardInfo() {
   try {
-    var seqEl = document.querySelector('#input-cc-gateway-card-seq, [name="order[payment_attributes][source_attributes][gateway_card_seq]"]');
-    var hasSeq = !!(seqEl && String(seqEl.value || '').trim());
+    var sel = registeredCardSelect();
+    if (sel && sel.options) {
+      var v = String(sel.value || '').trim();
+      if (v && v !== '0') {
+        var opt = sel.options[sel.selectedIndex];
+        var txt = opt ? (opt.text || '').trim() : '';
+        return { sel: sel, label: txt || '登録済みのカード' };
+      }
+      return null;   // 「新しく登録する」が選ばれている = 通常のカード入力
+    }
+    /* セレクトが無いLP向けの保険: 番号欄がマスク表示/読み取り専用なら登録済みとみなす */
     var numEl = document.querySelector('#input-cc-number, [name="order[payment_attributes][source_attributes][number]"]');
     var numVal = numEl ? String(numEl.value || '').trim() : '';
-    var masked = /[*＊●・x]/i.test(numVal) ? numVal : '';
-    var locked = !!(numEl && (numEl.readOnly || numEl.disabled) && numVal);
-    if (!hasSeq && !masked && !locked) return null;
-    var digits = numVal.replace(/\D/g, '');
-    return {
-      seqEl: seqEl,
-      label: masked || (digits.length >= 4 ? '**** **** **** ' + digits.slice(-4) : '登録済みのカード'),
-    };
+    if (!numVal) return null;
+    if (!/[*＊●・x]/i.test(numVal) && !numEl.readOnly && !numEl.disabled) return null;
+    return { sel: null, label: numVal };
   } catch (e) { return null; }
 }
 /* 「違うカードにする」を選んだ時: ecforceを新しいカード入力モードに戻す。
-   登録済みカードの識別子(gateway_card_seq)を空にし、番号欄のロックを解除する */
+   登録済みカードのセレクトを「新しく登録する」(value=0)に切り替えると、
+   ecforce側のJSが手入力欄を表示する */
 function releaseRegisteredCard(info) {
   try {
-    if (info && info.seqEl) {
-      info.seqEl.value = '';
-      info.seqEl.dispatchEvent(new Event('change', { bubbles: true }));
+    var sel = (info && info.sel) || registeredCardSelect();
+    if (sel && sel.options) {
+      var target = null;
+      for (var i = 0; i < sel.options.length; i++) {
+        var o = sel.options[i];
+        if (o.value === '0' || /新しく登録|新規|別のカード/.test(o.text || '')) { target = o.value; break; }
+      }
+      if (target != null) {
+        sel.value = target;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     }
     var numEl = document.querySelector('#input-cc-number, [name="order[payment_attributes][source_attributes][number]"]');
-    if (numEl) { numEl.readOnly = false; numEl.disabled = false; numEl.value = ''; }
-    /* ecforceが「別のカードを利用する」等の切替UIを出している場合はそれも押す */
-    var sw = [].slice.call(document.querySelectorAll('a,button,label,input[type=radio]')).filter(function (e) {
-      var t = (e.innerText || e.value || '') + ' ' + (e.className || '');
-      return /別のカード|新しいカード|新規カード|別のクレジット/.test(t) && !!e.offsetParent;
-    })[0];
-    if (sw) sw.click();
+    if (numEl) { numEl.readOnly = false; numEl.disabled = false; }
   } catch (e) {}
 }
 /* 登録済みカードの確認ステップ(はい / 違うカードにする) */
