@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.32.0
+    HugSkin 獲得チャットボット v3.32.1
+    (v3.32.1: memberStart の誤検知を修正。ecforceは弾き返し画面や再訪問時に
+     お客様の入力値をフォームに再表示するため、それを「ログイン済み」と誤認して
+     「ログインされた状態です」と出していた(2026-08-07 実LPの与信NG弾き返しで確認)。
+     ログイン中にしか現れない印(登録済みカードのセレクト/パスワード欄が出ない)を
+     必須にし、エラー弾き返し画面と送信済みブラウザでは短縮フローに入らないよう修正)
     (v3.32.0: 既にログイン済みでLPに来た会員の短縮フロー memberStart を追加
      (既定OFF)。ecforceがフォームに登録情報を差し込んだ状態を「チャットが
      書き込む前」に検出し、氏名・生年月日・住所・メール・パスワードを聞かず
@@ -1885,8 +1890,29 @@ function readMemberForm() {
       tel:   g('order[billing_address_attributes][tel01]'),
       email: g('order[email]') || g('order[customer_attributes][email]'),
     };
-    /* 氏名+(郵便番号 or 住所)が既に入っている時だけ「ログイン済み」とみなす */
+    /* 氏名+(郵便番号 or 住所)が既に入っている */
     if (!info.name || !(info.zip || info.addr1)) return null;
+
+    /* ⚠️ここからが誤検知の防止(v3.32.1・2026-08-07に実LPで誤検知を確認)。
+       ecforceは「送信後に弾き返した画面」や再訪問時に、お客様が入力した値を
+       そのままフォームに再表示する。値が入っている=ログイン中ではない。
+       実測: 与信NGの弾き返し画面ではテスト入力値が残り、パスワード欄は表示・
+       登録カードのセレクトは無し。一方ログイン中は登録カードのセレクトが出て、
+       ecforceが登録情報を差し込む。
+       → 「ログイン中にしか現れない印」がある時だけ短縮フローに入る(無ければ従来フロー) */
+    var pwEl = document.querySelector('[name="order[customer_attributes][password]"]');
+    var loginMark = !!registeredCardSelect()          // 登録済みカードのセレクト
+                 || !pwEl || !pwEl.offsetParent;       // 会員なのでパスワード欄が出ない
+    if (!loginMark) return null;
+
+    /* エラーで弾き返された画面(与信NG等)では短縮フローに入らない */
+    var pec = document.querySelector('input[name="payment_error_code"]');
+    if (pec && String(pec.value || '').trim()) return null;
+
+    /* このブラウザで既にチャットが注文を送信している場合、残っている値は
+       お客様自身の入力の再表示なのでログインとみなさない */
+    try { if (sessionStorage.getItem('hs_submitted')) return null; } catch (e) {}
+
     return info;
   } catch (e) { return null; }
 }
@@ -3174,6 +3200,8 @@ function fillLocalForm(form, silent) {
 /* 転記も例外時に無言で止まらないようにする */
 function transfer() {
   transferStarted = true;
+  /* このブラウザで送信済みの印(弾き返し画面の残存入力をログインと誤認しないため。v3.32.1) */
+  try { sessionStorage.setItem('hs_submitted', '1'); } catch (eSs) {}
   try {
     transferInner();
   } catch (err) {

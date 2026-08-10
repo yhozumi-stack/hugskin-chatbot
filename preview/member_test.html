@@ -21,7 +21,8 @@
   ecforce がログイン中の会員に返す状態（氏名・住所・メールが入った注文フォーム＋登録済みカードのセレクト）を再現しています。<br>
   ・<code>?logout</code> … 未ログイン状態（全項目空）で開く＝従来フローになることの確認<br>
   ・<code>?nocard</code> … ログイン済みだが登録カード無し＝支払いが通常の2択になることの確認<br>
-  ・<code>?pw</code> … ログイン中でもパスワード欄が必須表示されるテーマの再現（パスワードのみ質問されるか）
+  ・<code>?pw</code> … ログイン中でもパスワード欄が必須表示されるテーマの再現（パスワードのみ質問されるか）<br>
+  ・<code>?bounce</code> … <b>誤検知テスト</b>：ログインしていないのに入力値だけ残っている画面（ecforceの弾き返し後の再表示）。<b>短縮フローに入ってはいけない</b>
 </div>
 
 <section>
@@ -93,6 +94,12 @@
   }
   if (/[?&]nocard/.test(q) || loggedOut) document.getElementById('card-row').remove();
   if (/[?&]pw/.test(q)) document.getElementById('pw-row').style.display = '';
+  // 誤検知テスト: 未ログインなのに入力値だけ残っている状態(弾き返し後の再表示)
+  // = 登録カードのセレクト無し + パスワード欄が表示のまま
+  if (/[?&]bounce/.test(q)) {
+    var cr = document.getElementById('card-row'); if (cr) cr.remove();
+    document.getElementById('pw-row').style.display = '';
+  }
 
   // 入力された欄を緑枠に(転記の可視化)
   document.addEventListener('input', function (e) {
