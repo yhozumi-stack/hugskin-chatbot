@@ -245,6 +245,16 @@ SPECS = [
     ("purchase",  "pagePathPlusQueryString",    eq("eventName", "purchase")),
     ("form_view", "pagePathPlusQueryString",    eq("eventName", "form_view")),
     ("cta_click", "pagePathPlusQueryString",    eq("eventName", "cta_click")),
+    # 与信NGリカバリー(paymentFallback / chatbot.js v3.26.0〜)。後払いの与信落ちで
+    # ecforceがLPに弾き返した画面をチャットが検知し、クレカ再注文へ誘導した実績。
+    # ⚠️ 検知0は「与信NGが無かった」ではない。paymentFallbackは既定OFFで、
+    #    タグに書いたLPでしか発火しない(=タグ未設定なら黙って0になる)。
+    # ⚠️ 受注が立った後では回収できない(後払いのreauthは同期422=否認。2026-08-12に実受注2件で確認)。
+    #    回収口はこの導線だけなので、回収率は単独で意味を持つ指標として summary に出す。
+    ("payment_ng_detected", ["customEvent:hs_page", "pagePathPlusQueryString"],
+     eq("eventName", "hs_chat_payment_ng_detected")),
+    ("payment_ng_retry",    ["customEvent:hs_page", "pagePathPlusQueryString"],
+     eq("eventName", "hs_chat_payment_ng_retry")),
 ]
 
 
@@ -566,14 +576,20 @@ def main():
         cs, cu = g("purchase", var, "sessions"), g("purchase", var, "users")
         name, state = master.get(var, ("", ""))
         first, last = span.get(var, ["", ""])
+        ngd = g("payment_ng_detected", var, "users")   # 与信NGの弾き返しを検知した人数
+        ngr = g("payment_ng_retry", var, "users")       # カード再入力→再送信まで進んだ人数
         rows.append([var, name, state, first, last, ls, lu, os_, ou, cs, cu,
-                     pct(os_, ls), pct(ou, lu), pct(cs, ls), pct(cu, lu)])
+                     pct(os_, ls), pct(ou, lu), pct(cs, ls), pct(cu, lu),
+                     ngd, ngr, pct(ngr, ngd)])
     # 本番(状態あり)を上に、流入(sessions)降順
     order = {"稼働": 0, "テスト中": 1, "停止": 2, "": 9}
     rows.sort(key=lambda r: (order.get(r[2], 9), -r[5]))
     summary = [["variant", "名前", "状態", "初回着地", "最終着地", "landing_s", "landing_u",
                 "open_s", "open_u", "cv_s", "cv_u",
-                "起動率_s(%)", "起動率_u(%)", "LPCVR_s(%)", "LPCVR_u(%)"]] + rows
+                "起動率_s(%)", "起動率_u(%)", "LPCVR_s(%)", "LPCVR_u(%)",
+                # 与信NGリカバリー(後払いの与信落ち→クレカ再注文誘導)。分母0のときは空欄("")で、
+                # 0% をでっち上げない。⚠️検知0は「NGが無かった」ではなくタグ未設定の可能性がある。
+                "与信NG検知_u", "与信NG回収_u", "与信NG回収率_u(%)"]] + rows
 
     # ---- 表示(dry) ----
     print(f"== variant集計 (直近{WINDOW}日 / property {PID}) ==")
@@ -657,6 +673,10 @@ def main():
     if "variant_summary" in existing:
         ws = sh.worksheet("variant_summary")
         ws.clear()
+        # 列を増やした改修(与信NG3列の追加など)で既存タブの列数が足りないと update が失敗する。
+        # variant_daily 側と同じく、足りない分だけ広げてから書く。
+        if ws.col_count < len(summary[0]):
+            ws.add_cols(len(summary[0]) - ws.col_count)
     else:
         ws = sh.add_worksheet("variant_summary", rows=max(50, len(summary) + 5), cols=len(summary[0]))
     ws.update(summary, "A1")
