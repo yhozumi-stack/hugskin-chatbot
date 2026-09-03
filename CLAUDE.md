@@ -327,6 +327,23 @@ fieldNotes: { addr2: 'アパート・マンションの方は建物名と部屋�
 - 本番タグの完成形: `tags/入力チェック対応_1〜3_*.html`(離脱確認なし/安心訴求/お得訴求の3パターン)
 - 動作確認: `preview/np_test.html`(チェックリスト付き。`?legacy`=OFF比較) / `preview/?scenario=formplus_np2&checks`
 
+### レシピ21: 転記レス実験(nativeFields・v3.33.0〜・LP個別・既定OFF・ABテスト用)
+a-works「reformux」の思想(見た目はチャット、構造は純正フォーム)を自社ボットで検証する実験機能。
+有効化したLPでは、テキスト入力ステップでチャット製の入力欄を作る代わりに、**LP内ecforceフォームの
+本物のinput要素をチャット吹き出し内へ一時移動**して直接入力してもらう(ステップ完了時に元の位置へ返却)。
+入力した瞬間から値は実フォーム要素上にあるため、対象項目には「転記」という工程が存在しなくなる。
+```js
+nativeFields: true,   // 転記レス実験ON(hideForm: true と併用推奨)
+```
+- 対象: お名前(name01)/フリガナ(kana01)/メール(order[email])/電話(tel01)/パスワード/住所1・2(text系のみ。対象一覧はchatbot.jsのNATIVE_MAP)
+- 対象外(従来方式のまま): 都道府県・生年月日・支払い(select系)/カード(ZEUS 3DSの検証状態が繊細)/郵便番号(zipcloud連携UX)
+- **transfer()は従来どおり全項目に走る**(同値上書き=無害)。借用に失敗した項目・ecforceがセクション再描画して返却先が消えた場合も、transferの安全網で注文は壊れない
+- ×で閉じると借用要素は即返却(フォームを欠けさせない)。再オープンで借り直す。✎の1問修正も通常どおり効く
+- ⚠️チャットはShadow DOM内のため、借用中はecforce側のJS(validationEngine等)から要素が見えなくなる。emailDupCheckはAPI方式(v3.29.1〜)なので影響なし
+- 検証手順: 既存bot導線とのスプリットABで、reformuxの作法どおり**p値の有意差で判断**する(勝てなければ切替えない)
+- 動作確認: `preview/?scenario=formplus&cfg={"nativeFields":true}`(URLエンコード: `cfg=%7B%22nativeFields%22%3Atrue%7D`)。チャット内inputのname属性が `order[...]` になっていれば借用成功
+- 背景資料: Notion「a-works自社チャットのこと」(2026-08-31会議・reformuxスライド全13枚の読み取りを追記済み)
+
 ### レシピ7: 動作確認(変更したら必ずやる)
 ```bash
 cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot

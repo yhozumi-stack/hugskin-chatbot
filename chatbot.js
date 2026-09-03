@@ -1,5 +1,16 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.32.1
+    HugSkin 獲得チャットボット v3.33.0
+    (v3.33.0: 転記レス実験 nativeFields を追加(既定OFF)。
+     a-works「reformux」の思想(見た目はチャット、構造は純正フォーム)の自社検証用。
+     有効化したLPでは、テキスト入力ステップ(お名前/フリガナ/メール/電話/
+     パスワード/住所1・2)でチャット製の入力欄を作る代わりに、LP内ecforce
+     フォームの「本物のinput要素」をチャット吹き出し内へ一時移動して直接
+     入力してもらう(ステップ完了時に元の位置へ戻す)。入力した瞬間から値は
+     実フォーム上にあるため、これらの項目は転記という工程自体が無くなる。
+     transfer()は従来どおり全項目に走る(同値上書き=無害な安全網)ので、
+     採用できなかった項目・select系(都道府県/生年月日/支払い)・カードは
+     従来方式のまま。タグに nativeFields: true で有効化=既存LPは1ミリも
+     変わらない。preview確認: /preview/?scenario=formplus&cfg={"nativeFields":true})
     (v3.32.1: memberStart の誤検知を修正。ecforceは弾き返し画面や再訪問時に
      お客様の入力値をフォームに再表示するため、それを「ログイン済み」と誤認して
      「ログインされた状態です」と出していた(2026-08-07 実LPの与信NG弾き返しで確認)。
@@ -299,6 +310,14 @@ var DEFAULTS = {
      'auto'(既定) = LPのフォームにCVV欄があれば聞く・無ければ聞かない(LP側で欄を削除すれば自動で消える)
      true  = 常に聞く / false = 常に聞かない */
   cardCvv: 'auto',
+  /* 転記レス実験(既定OFF・v3.33.0)。trueにしたLPだけ、テキスト入力ステップで
+     チャット製の入力欄の代わりに「LP内ecforceフォームの本物のinput要素」を
+     チャット吹き出し内へ一時移動して直接入力してもらう(完了時に元へ戻す)。
+     対象は NATIVE_MAP にある項目のみ(お名前/フリガナ/メール/電話/パスワード/住所1・2)。
+     select系(都道府県/生年月日/支払い)・カード・郵便番号は従来方式のまま。
+     transfer()は従来どおり走る=同値上書きの安全網。hideForm併用可(むしろ推奨)。
+     ⚠️ABテスト用の実験機能。本採用判断は有意差ベースで(reformux検証の作法) */
+  nativeFields: false,
   zipApi: 'https://zipcloud.ibsnet.co.jp/api/search?zipcode=',
 };
 
@@ -911,12 +930,14 @@ function openPanel() {
   }
   panelEl.style.display = 'flex';
   if (launcherEl) launcherEl.style.display = 'none';
+  readoptNative();   // nativeFields: ×で閉じた時に返した実要素を表示中カードへ借り直す
   track('open');
   startFlow();
 }
 function closePanel() {
   if (panelEl) panelEl.style.display = 'none';
   if (launcherEl) launcherEl.style.display = 'flex';
+  restoreAdopted();   // nativeFields: 借用中の実フォーム要素を返す(フォームを欠けさせない)
   showLpForm();   // hideForm利用時: チャットを閉じたらフォームを出す(注文導線を潰さない)
   track('close');
 }
@@ -1083,6 +1104,7 @@ function typing() {
   return row;
 }
 function clearCards() {
+  restoreAdopted();   // nativeFields: 借りている実フォーム要素をカード削除前に必ず返す
   msgsEl.querySelectorAll('.card, .choices, .err').forEach(function (e) { e.remove(); });
 }
 function clearErrors() { msgsEl.querySelectorAll('.err').forEach(function (e) { e.remove(); }); }
@@ -2202,36 +2224,124 @@ function fieldInputHtml(f, idx) {
     + '>';
 }
 
+/* ---------- 転記レス実験(nativeFields・既定OFF・v3.33.0) ----------
+   a-works「reformux」の思想(見た目はチャット、構造は純正フォーム)の自社検証用。
+   LP内ecforceフォームの「本物のinput要素」をチャットカード内へ一時移動して
+   直接入力してもらい、ステップ完了(clearCards)時に必ず元の位置へ戻す。
+   ・要素は移動してもname属性そのままなので、ecforceのname参照もtransfer()も
+     従来どおり全部効く(transferは同値上書き=無害な安全網として残す)
+   ・対象はNATIVE_MAPにあるtext系のみ。select系(都道府県/生年月日/支払い)・
+     カード(ZEUS 3DSの検証状態が繊細)・郵便番号(zipcloud連携UX)は従来方式
+   ・ecforceがセクションを再描画して戻し先が消えた場合は戻しを握りつぶす
+     (その時もtransfer()が新しい要素へ値を入れるので注文は壊れない) */
+var NATIVE_MAP = {
+  name_full: 'order[billing_address_attributes][name01]',
+  kana_full: 'order[billing_address_attributes][kana01]',
+  email:     'order[email]',
+  tel:       'order[billing_address_attributes][tel01]',
+  password:  'order[customer_attributes][password]',
+  addr1:     'order[billing_address_attributes][addr01]',
+  addr2:     'order[billing_address_attributes][addr02]',
+};
+var nativeReg = {};   // name → {el, home}。homeは実フォーム内の帰り先マーカー(不可視span)
+function nativeOn() { return CFG.nativeFields === true && CFG.transferMode !== 'redirect'; }
+function adoptField(key) {
+  var name = NATIVE_MAP[key];
+  if (!name) return null;
+  var rec = nativeReg[name];
+  if (!rec) {
+    var form = findLocalForm();
+    if (!form) return null;
+    var el = form.querySelector('[name="' + name + '"]');
+    if (!el || el.tagName !== 'INPUT') return null;
+    var home = document.createElement('span');
+    home.style.display = 'none';
+    home.setAttribute('data-hs-home', name);
+    el.parentNode.insertBefore(home, el);
+    el.setAttribute('data-hs-native-el', '1');
+    rec = nativeReg[name] = { el: el, home: home };
+  }
+  return rec.el;
+}
+/* 借りている要素を全て実フォームの元位置へ戻す(冪等・何度呼んでも安全) */
+function restoreAdopted() {
+  for (var name in nativeReg) {
+    var a = nativeReg[name];
+    try {
+      if (a.home.parentNode) a.home.parentNode.insertBefore(a.el, a.home.nextSibling);
+    } catch (e) {}
+  }
+}
+/* チャット再オープン時: 表示中カードのスロットへ借用要素を戻す(closePanelで返却済みのため) */
+function readoptNative() {
+  if (!nativeOn() || !msgsEl) return;
+  var card = msgsEl.querySelector('.card[data-hs-native]');
+  if (!card) return;
+  card.querySelectorAll('.hs-nslot').forEach(function (slot) {
+    var rec = nativeReg[slot.getAttribute('data-name')];
+    if (rec && rec.el) slot.parentNode.insertBefore(rec.el, slot);
+  });
+}
+
 function renderFields(s, i) {
   botBubble(stepIntro(s));
   var card = document.createElement('div');
   card.className = 'card';
+
+  /* 転記レス実験(nativeFields): 借りられる実フォーム要素を先に確保しておく */
+  var nativeEls = {};   // idx → 実フォームから借りたinput要素
+  if (nativeOn()) {
+    s.fields.forEach(function (f, idx) {
+      var el = adoptField(f.key);
+      if (el) nativeEls[idx] = el;
+    });
+  }
+  /* 要素アクセサ: nativeならば借用要素、通常はチャット製input */
+  function fEl(idx) { return nativeEls[idx] || card.querySelector('#f' + idx); }
+
   var inner = s.fields.map(function (f, idx) {
     /* 入力欄の下の注意書き(タグのfieldNotes優先、なければシナリオのnote) */
     var note = (CFG.fieldNotes && CFG.fieldNotes[f.key]) || f.note || '';
-    return '<div class="fld"><label>' + esc(f.label) + '</label>' + fieldInputHtml(f, idx)
+    /* nativeの項目は入力欄の代わりに不可視スロットを置き、後で実要素を差し込む */
+    var inputHtml = nativeEls[idx]
+      ? '<span class="hs-nslot" data-name="' + esc(NATIVE_MAP[f.key]) + '" style="display:none"></span>'
+      : fieldInputHtml(f, idx);
+    return '<div class="fld"><label>' + esc(f.label) + '</label>' + inputHtml
       + (note ? '<div class="fld-note">' + esc(note) + '</div>' : '')
       + '</div>';
   }).join('');
   card.innerHTML = (s.layout === '2col' ? '<div class="two">' + inner + '</div>' : inner)
     + '<button class="go">次へ →</button>';
+  if (Object.keys(nativeEls).length) card.setAttribute('data-hs-native', '1');
   msgsEl.appendChild(card); scrollBottom();
+
+  /* nativeの実要素をスロット位置へ移動(+placeholder等の最低限の体裁だけ補う。typeは触らない) */
+  Object.keys(nativeEls).forEach(function (k) {
+    var idx = +k, f = s.fields[idx], el = nativeEls[idx];
+    var slot = card.querySelector('.hs-nslot[data-name="' + NATIVE_MAP[f.key] + '"]');
+    if (!slot) return;
+    slot.parentNode.insertBefore(el, slot);
+    if (f.placeholder && !el.getAttribute('placeholder')) el.setAttribute('placeholder', f.placeholder);
+    if (f.inputmode && !el.getAttribute('inputmode')) el.setAttribute('inputmode', f.inputmode);
+  });
 
   /* 郵便番号API等からのプリフィル */
   s.fields.forEach(function (f, idx) {
     if (prefill[f.key] != null) {
-      card.querySelector('#f' + idx).value = prefill[f.key];
+      fEl(idx).value = prefill[f.key];
       delete prefill[f.key];
     }
   });
 
-  /* メール欄には @ 以降のドメインサジェストを付ける */
+  /* メール欄には @ 以降のドメインサジェストを付ける
+     (native借用要素はページ滞在中ずっと生きるためリスナー重複を避けて付けない) */
   s.fields.forEach(function (f, idx) {
-    if ((f.inputType || '') === 'email') attachEmailSuggest(card.querySelector('#f' + idx));
+    if ((f.inputType || '') === 'email' && !nativeEls[idx]) attachEmailSuggest(card.querySelector('#f' + idx));
   });
 
-  /* 郵便番号・電話番号は桁数の上限を超えて打てないようにする(inputChecks有効時) */
+  /* 郵便番号・電話番号は桁数の上限を超えて打てないようにする(inputChecks有効時。native要素は除外) */
   s.fields.forEach(function (f, idx) {
+    if (nativeEls[idx]) return;
     var kind = f.validate || f.norm;
     if (kind === 'zip') capDigits(card.querySelector('#f' + idx), 7);
     if (kind === 'tel') capDigits(card.querySelector('#f' + idx), 11);
@@ -2244,14 +2354,16 @@ function renderFields(s, i) {
     var vals = [];
     for (var idx = 0; idx < s.fields.length; idx++) {
       var f = s.fields[idx];
-      var v = card.querySelector('#f' + idx).value.trim();
+      var v = fEl(idx).value.trim();
       if (f.norm && NORMS[f.norm]) v = NORMS[f.norm](v);
       /* 住所欄は表記の正規化をかける(長音符→半角ハイフン等。inputChecks有効時のみ) */
       else if ((f.key === 'addr1' || f.key === 'addr2')
                && CFG.inputChecks && CFG.inputChecks.addrNorm !== false) {
         v = NORMS.addr(v);
-        card.querySelector('#f' + idx).value = v;
+        fEl(idx).value = v;
       }
+      /* native借用要素には正規化後の値を書き戻す(実フォームが正の値を持つ状態を保つ) */
+      if (nativeEls[idx]) fEl(idx).value = v;
       if (!f.optional || v) {
         var validator = f.validate ? VALIDATORS[f.validate] : null;
         var err = f.optional && !v ? null : (validator ? validator(v) : (v ? null : '入力してください'));
@@ -2287,7 +2399,7 @@ function renderFields(s, i) {
 
   var inputs = card.querySelectorAll('input,select');
   inputs.forEach(function (inp, idx) {
-    inp.addEventListener('keydown', function (e) {
+    var onKey = function (e) {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       /* IMEの変換確定Enterでは絶対に進まない(日本語入力の誤送信防止) */
@@ -2296,7 +2408,12 @@ function renderFields(s, i) {
       if (s.enterNext === false) return;
       if (idx < inputs.length - 1) inputs[idx + 1].focus();
       else goBtn.click();
-    });
+    };
+    /* native借用要素はページ滞在中ずっと生きるため、addEventListenerだと
+       修正(再レンダー)のたびに古いカードのハンドラが積み重なって二重進行する。
+       プロパティ代入(常に最新の1個だけ)で付ける */
+    if (inp.getAttribute('data-hs-native-el')) inp.onkeydown = onKey;
+    else inp.addEventListener('keydown', onKey);
   });
   maybeFocus(card.querySelector('input,select'));
 }
@@ -3200,6 +3317,8 @@ function fillLocalForm(form, silent) {
 /* 転記も例外時に無言で止まらないようにする */
 function transfer() {
   transferStarted = true;
+  restoreAdopted();   // nativeFields: 転記前に借用要素が実フォームに揃っていることを保証
+
   /* このブラウザで送信済みの印(弾き返し画面の残存入力をログインと誤認しないため。v3.32.1) */
   try { sessionStorage.setItem('hs_submitted', '1'); } catch (eSs) {}
   try {
