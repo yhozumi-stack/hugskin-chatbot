@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>thanksoffer.js 動作確認モック(cv_upsellページ再現)</title>
+<style>
+  /* 実ページ(hugskin.shop/lp/cv_upsell)のDOM構造を再現したモック。
+     セレクタ・表示切替の挙動は 2026-09-03 のセッション有効実ページ照合に基づく。
+     画像は実CDN(公開アセット)をそのまま参照 */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"Hiragino Sans",sans-serif; background:#fff; }
+  main { max-width:500px; margin:0 auto; }
+  main img { display:block; width:100%; height:auto; }
+  .cta_box { display:none; padding:16px; }
+  .cta_btn { display:none; }
+  .cta_box.show { display:block; }
+  .cta_btn.show { display:block; }
+  .pseudo_confirm { border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; font-size:13px; }
+  .pc_head { font-weight:700; color:#a86880; margin-bottom:6px; }
+  .pc_course { font-weight:800; font-size:15px; }
+  .pc_price_row { display:flex; justify-content:space-between; margin:4px 0; }
+  .pc_point_row { color:#d6305f; font-weight:700; font-size:12px; }
+  .pc_next { color:#666; font-size:12px; margin-top:4px; }
+  .qa-caution { font-size:10.5px; color:#555; line-height:1.7; white-space:pre-wrap; padding:10px; background:#fafafa; border:1px solid #eee; margin:10px 0; }
+  #submit { display:block; width:100%; max-width:400px; height:150px; margin:0 auto; border:none; cursor:pointer;
+    color:transparent; background-color:transparent; background-repeat:no-repeat; background-size:contain; background-position:center;
+    background-image:url('https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/starter_btn.png'); }
+  .mock-banner { position:fixed; top:0; left:0; right:0; z-index:2147483600; background:#0a7d32; color:#fff; font-size:13px; font-weight:700; padding:10px 14px; text-align:center; display:none; }
+  .mock-banner.show { display:block; }
+  .mock-check { padding:14px; background:#fff9ec; border:1px solid #f0d8a8; margin:12px; font-size:11.5px; line-height:1.8; color:#7a5a20; border-radius:8px; }
+</style>
+</head>
+<body>
+
+<div class="mock-banner" id="mock-banner"></div>
+
+<div class="mock-check">
+  <b>✅ 確認チェックリスト(thanksoffer.jsの全パターン)</b><br>
+  1. 読み込み直後: チャットが開き、履歴(薄い色)→赤字注意→3コース表が出る<br>
+  2. スターター行タップ → ご選択内容の確認+注意喚起(3回)+スターターボタン画像<br>
+  3. プレミアム行タップ(選び直し) → 表示が差し替わり注意喚起が「6回」に追従する<br>
+  4. コースボタンタップ → お礼バブル → 緑バナー「送信されました(variant=22)」<br>
+  5. リロード後ベーシック行タップ → ボタンのみ → タップで ?basic=1 へ遷移(緑バナー)<br>
+  6. ×で閉じる → 素のページが見える+「チャットに戻る」ボタン → 戻れる<br>
+  7. <code>?nohist</code> 付きで開く → 履歴なしで注意バブルから始まる<br>
+  8. <code>?nodetect</code> 付きで開く → チャットが一切出ない(フェイルセーフ)
+</div>
+
+<main>
+  <div class="bg01">
+    <picture><img src="https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/webp/offer_chat.webp" alt=""></picture>
+  </div>
+  <div class="bg02">
+    <div class="bg02_column_ttl">
+      <picture><img src="https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/webp/plan_ttl.webp" alt=""></picture>
+    </div>
+    <div class="bg02_column_01">
+      <picture><img src="https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/2980/3course_basic.webp" alt=""></picture>
+    </div>
+    <a class="bg02_column_02" href="#lp-form">
+      <picture><img src="https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/2980/3course_starter.webp" alt=""></picture>
+    </a>
+    <a class="bg02_column_03" href="#lp-form">
+      <picture><img src="https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/2980/3course_premium.webp" alt=""></picture>
+    </a>
+  </div>
+
+  <div class="cta_box" id="cta_box">
+    <div class="cta_btn btn01" id="btn01">
+      <a href="thanks_offer_test.html?basic=1">
+        <picture><img src="https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/webp/basic_btn.webp" alt=""></picture>
+      </a>
+    </div>
+    <div class="cta_btn btn02" id="btn02">
+      <div class="pseudo_confirm" id="pseudo-confirm">
+        <p class="pc_head">ご選択内容の確認</p>
+        <p class="pc_course" id="pc_course">スターターコース（3回継続）</p>
+        <div class="pc_price_row"><span class="pc_label">今回のお支払い</span><span class="pc_price">2,980<small>円(税込)</small></span></div>
+        <div class="pc_point_row">後日 <strong>2,980円分のポイント</strong>を付与 ＝ 実質無料</div>
+        <p class="pc_next" id="pc_next">2回目以降：10,900円(税込)／ずっと540円OFF</p>
+      </div>
+      <div id="cv-upsell-view">
+        <div id="lp-form" class="form_container_ec">
+          <div class="form_cv_upsell_ec">
+            <form id="form_cv_upsell" class="form_main_container_ec" action="#" method="post">
+              <input type="hidden" name="_method" value="put">
+              <input type="hidden" name="order[take_cv_upsell_offer]" value="1">
+              <select id="variant_id" style="margin:8px 0;font-size:12px;">
+                <option value="21" selected>HugSkin C10 オールインセラム【スターターコース／定期・3回お約束】_0013</option>
+                <option value="22">HugSkin C10 オールインセラム【プレミアムコース／定期・6回お約束】_0014</option>
+              </select>
+              <input type="hidden" id="cv_upsell_variant_id" name="preview_order[order_items_attributes][][variant_id]" value="21">
+              <div class="cv-offer-preview-view">
+                <div class="preview_container_ec">
+                  <div class="qa-caution without_border_ec" id="qa-caution"></div>
+                </div>
+              </div>
+              <div class="submit_ec"><center>
+                <input type="submit" id="submit" class="submit_cv_upsell_button_complete_ec" value="">
+              </center></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ===== 実ページのJS挙動を再現するモックスクリプト ===== */
+var CAUTION_STARTER = '・【スターターコース／定期・3回お約束】とは、3回（初回含む）のお受取りをお約束いただくことで、お得な特別価格でお求めいただけるコースです。\n・お受け取りをお約束いただくことでお得にご提供する仕組みですので、3回お受け取り完了前の途中停止、解約、返金等はできません。\n・初回2,980円(税込)、2回目以降は10,900円(税込)でお届けし、3回お受け取りいただいた場合の支払い総額は24,780円(税込)となります。\n・4回目以降の解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。';
+var CAUTION_PREMIUM = '・【プレミアムコース／定期・6回お約束】とは、6回（初回含む）のお受取りをお約束いただくことで、お得な特別価格でお求めいただけるコースです。\n・お受け取りをお約束いただくことでお得にご提供する仕組みですので、6回お受け取り完了前の途中停止、解約、返金等はできません。\n・初回2,980円(税込)、2回目以降も9,700円(税込)でお届けし、6回お受け取りいただいた場合の支払い総額は51,480円(税込)となります。\n・7回目以降の解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。';
+var BTN_STARTER = 'https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/starter_btn.png';
+var BTN_PREMIUM = 'https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/serum_3course_upsell/img/premium_btn.png';
+
+document.getElementById('qa-caution').textContent = CAUTION_STARTER;
+
+function pickMock(variant) {
+  document.getElementById('variant_id').value = String(variant);
+  document.getElementById('cv_upsell_variant_id').value = String(variant);
+  document.getElementById('pc_course').textContent = variant === 22 ? 'プレミアムコース（6回継続）' : 'スターターコース（3回継続）';
+  document.getElementById('pc_next').textContent = variant === 22 ? '2回目以降：9,700円(税込)／ずっと1,740円OFF' : '2回目以降：10,900円(税込)／ずっと540円OFF';
+  document.getElementById('cta_box').classList.add('show');
+  document.getElementById('btn02').classList.add('show');
+  document.getElementById('submit').style.backgroundImage = 'url(' + (variant === 22 ? BTN_PREMIUM : BTN_STARTER) + ')';
+  /* 実ページ同様、注意喚起文は少し遅れて差し替わる(ecforceのpreview再描画を再現) */
+  setTimeout(function () {
+    document.getElementById('qa-caution').textContent = variant === 22 ? CAUTION_PREMIUM : CAUTION_STARTER;
+  }, 700);
+}
+document.querySelector('.bg02_column_02').addEventListener('click', function (e) { e.preventDefault(); pickMock(21); });
+document.querySelector('.bg02_column_03').addEventListener('click', function (e) { e.preventDefault(); pickMock(22); });
+
+/* 送信はモックで止めて緑バナー表示 */
+document.getElementById('form_cv_upsell').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var b = document.getElementById('mock-banner');
+  b.textContent = '✅ モック: #form_cv_upsell が送信されました (variant=' + document.getElementById('variant_id').value + ') — 本番ではecforceが注文完了ページへ遷移させます';
+  b.classList.add('show');
+});
+
+/* ?basic=1 で戻ってきたらベーシック遷移成功のバナー */
+if (location.search.indexOf('basic=1') >= 0) {
+  var b2 = document.getElementById('mock-banner');
+  b2.textContent = '✅ モック: ベーシック=LINE誘導LPへの遷移が実行されました(このページに戻しています)';
+  b2.classList.add('show');
+}
+
+/* ?nodetect でフェイルセーフ確認(マーカーinputを消す) */
+if (location.search.indexOf('nodetect') >= 0) {
+  document.querySelector('input[name="order[take_cv_upsell_offer]"]').remove();
+}
+
+/* 履歴のシード(LP側chatbot.jsのthanksOffer保存を再現)。?nohist でスキップ */
+if (location.search.indexOf('nohist') >= 0) {
+  sessionStorage.removeItem('hs_thanks_history');
+} else if (location.search.indexOf('basic=1') < 0) {
+  var AV = 'https://yhozumi-stack.github.io/hugskin-chatbot/img/operator.png';
+  sessionStorage.setItem('hs_thanks_history', JSON.stringify({
+    ts: Date.now(),
+    html:
+      '<div class="row"><div class="av"><img src="' + AV + '"></div><div class="bb bot">ご注文内容をご確認ください✨</div></div>'
+      + '<div class="row user"><div class="bb user">この内容で注文を確定する ✔</div></div>'
+      + '<div class="row"><div class="av"><img src="' + AV + '"></div><div class="bb bot">ありがとうございます！<br>ご注文を送信しています✨</div></div>',
+  }));
+}
+</script>
+
+<!-- 本体(このファイルからの相対参照)。?onlyu=xxx でonlyUゲートのテスト
+     (?onlyu=t1 だけ→出ない / ?onlyu=t1&u=t1 →出る) -->
+<script>
+(function () {
+  var ou = new URLSearchParams(location.search).get('onlyu');
+  window.HS_THANKS = ou ? { onlyU: ou.split(',') } : {};
+})();
+</script>
+<script src="../thanksoffer.js?v=dev"></script>
+
+</body>
+</html>

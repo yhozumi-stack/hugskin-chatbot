@@ -1,5 +1,11 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.33.0
+    HugSkin 獲得チャットボット v3.34.0
+    (v3.34.0: サンクスオファー連携 thanksOffer を追加(既定OFF)。
+     タグに thanksOffer: true を書いたLPだけ、ページ遷移時にチャット履歴を
+     sessionStorageへ保存する(pagehide)。サンクスオファーページ(cv_upsell)に
+     設置する別モジュール thanksoffer.js がこれを復元し、注文完了直後の
+     アップセル(3コース選択)を「チャットが続いている見た目」で提示する。
+     本体側の変更はこの履歴保存のみ=既存LPは1ミリも変わらない。レシピ22)
     (v3.33.0: 転記レス実験 nativeFields を追加(既定OFF)。
      a-works「reformux」の思想(見た目はチャット、構造は純正フォーム)の自社検証用。
      有効化したLPでは、テキスト入力ステップ(お名前/フリガナ/メール/電話/
@@ -261,6 +267,11 @@ var DEFAULTS = {
      ⚠️ LPが「確認画面を表示しない」設定の場合は即注文確定になるため false にすること。
      後払い(同意チェックが必要)の時は auto でも自動送信せず、チェックをお願いする案内になる */
   autoSubmit: true,
+  /* サンクスオファー連携(既定OFF・v3.34.0・レシピ22)。trueにしたLPだけ、
+     ページ遷移時にチャット履歴をsessionStorageへ保存し、サンクスオファー
+     ページ(cv_upsell)側の thanksoffer.js が「チャットが続いている見た目」で
+     履歴を復元できるようにする。cv_upsell側のタグ設置とセットで使う */
+  thanksOffer: false,
   ecforceOrderUrl: 'https://hugskin.shop/shop/orders/new',
   loginUrl: 'https://hugskin.shop/shop/customers/sign_in',  // 会員向けログイン画面
   /* メール入力時点の既登録チェック(既定OFF・v3.28.4)。trueにしたLPだけ、
@@ -3431,6 +3442,24 @@ function transferInner() {
   p.set('from_chatbot', '1');
   track('submit');
   window.location.href = CFG.ecforceOrderUrl + '?' + p.toString();
+}
+
+/* ---------- サンクスオファー連携: 履歴保存(thanksOffer・既定OFF・v3.34.0) ----------
+   ページ遷移(注文送信によるcv_upsellへの遷移を含む)の瞬間に、チャットの
+   会話ログHTMLをsessionStorageへ保存する。cv_upsell側の thanksoffer.js が
+   これを復元して「チャットが続いている見た目」を作る。
+   pagehideはiOS Safari含め遷移時に確実に発火する。CFG.thanksOffer=false(既定)
+   なら一切何もしない=既存LPへの影響ゼロ */
+if (CFG.thanksOffer) {
+  window.addEventListener('pagehide', function () {
+    try {
+      if (!msgsEl) return;
+      sessionStorage.setItem('hs_thanks_history', JSON.stringify({
+        html: msgsEl.innerHTML,
+        ts: Date.now(),
+      }));
+    } catch (e) {}
+  });
 }
 
 /* ---------- 起動 ---------- */

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>サンクスアップセル チャットデモ（挙動イメージ確認用）</title>
+<style>
+  /* ============================================================
+     サンクスアップセル(thanksOffer)の挙動イメージ確認用デモ v4。
+     実ページ(FireShot Capture 535)の構造を踏襲:
+       3コース表 → 行タップ → 確認内容(商品設定+注文内容+注意喚起文)が出て
+       その下に「〇〇コースにする」ボタン(1タップで確定)
+       スターター/プレミアム=注文完了ページ / ベーシック=LINE誘導LPへ
+     chatbot.js 本体とは独立。テーマは本体定義を手写しで再現。
+     ============================================================ */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; background:#e8e0e3; }
+
+  /* ---- 背面: LP/cv_upsellページの簡易モック ---- */
+  .lp-mock { position:fixed; inset:0; overflow:hidden; background:#fff; }
+  .lp-mock .hero { background:linear-gradient(160deg,#fdf6f8,#f6e3e9); padding:34px 20px 26px; text-align:center; }
+  .lp-mock .hero h1 { font-size:20px; color:#3a2a30; letter-spacing:.05em; }
+  .lp-mock .hero h1 b { color:#C8869A; }
+  .lp-mock .hero .bottle { width:84px; height:150px; margin:16px auto 8px; background:linear-gradient(#fdfbfc,#f3e7ec); border-radius:14px 14px 10px 10px; border:1px solid #e8d5dd; position:relative; }
+  .lp-mock .hero .bottle::before { content:''; position:absolute; top:-16px; left:50%; transform:translateX(-50%); width:26px; height:18px; background:#d5b48a; border-radius:4px 4px 0 0; }
+  .lp-mock .hero .bottle::after { content:'HUGSKIN'; position:absolute; bottom:26px; left:0; right:0; font-size:8px; letter-spacing:.22em; color:#b09aa2; }
+  .lp-dim { position:fixed; inset:0; background:rgba(60,40,48,.35); backdrop-filter:blur(1.5px); }
+
+  /* ---- チャットウィンドウ(本体のfloatモード再現) ---- */
+  .chat { position:fixed; right:10px; bottom:12px; width:min(374px,calc(100vw - 20px));
+    height:min(620px,calc(100dvh - 24px)); display:flex; flex-direction:column;
+    background:#f9f1f4; border-radius:16px; overflow:hidden;
+    box-shadow:0 8px 40px rgba(80,40,55,.35); z-index:10; }
+  .hd { background:#C8869A; padding:11px 14px; display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .hd .av-img { width:34px; height:34px; border-radius:50%; overflow:hidden; background:#fff; flex-shrink:0; }
+  .hd .av-img img { width:100%; height:100%; object-fit:cover; }
+  .hd-name { color:#fff; font-size:13.5px; font-weight:700; letter-spacing:.02em; }
+  .hd-sub { color:rgba(255,255,255,.85); font-size:11px; margin-top:1px; }
+  .hd .x { margin-left:auto; color:rgba(255,255,255,.9); font-size:18px; background:none; border:none; cursor:pointer; }
+
+  .body { flex:1; overflow-y:auto; padding:14px 12px 18px; display:flex; flex-direction:column; gap:10px; }
+  .row { display:flex; gap:8px; align-items:flex-end; flex-shrink:0; animation:up .18s ease both; }
+  .row.user { justify-content:flex-end; }
+  @keyframes up { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
+  .av { width:28px; height:28px; border-radius:50%; overflow:hidden; background:#C8869A; flex-shrink:0; margin-bottom:2px; }
+  .av img { width:100%; height:100%; object-fit:cover; }
+  .bb { max-width:78%; padding:10px 13px; font-size:13.5px; line-height:1.7; white-space:pre-wrap; }
+  .bb.bot { background:#fff; color:#3a2a30; border-radius:3px 12px 12px 12px; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  .bb.user { background:#C8869A; color:#fff; border-radius:12px 3px 12px 12px; }
+  .bb .red { color:#d63030; font-weight:700; }
+
+  .typing { display:inline-flex; gap:4px; background:#fff; border-radius:3px 12px 12px 12px; padding:13px 15px; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  .dot { width:6px; height:6px; border-radius:50%; background:#c8a0b0; animation:blink 1.1s infinite; }
+  .dot:nth-child(2){ animation-delay:.18s } .dot:nth-child(3){ animation-delay:.36s }
+  @keyframes blink { 0%,60%,100%{opacity:.3} 30%{opacity:1} }
+
+  /* LP側の確認カード */
+  .card { margin-left:36px; max-width:86%; background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; flex-shrink:0; animation:up .2s ease both; }
+  .card table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .card td { padding:8px 12px; border-bottom:.5px solid rgba(0,0,0,.05); }
+  .card td:first-child { color:#9a7a85; width:88px; white-space:nowrap; }
+  .card td:last-child { color:#3a2a30; font-weight:500; }
+  .card tr.tot td { font-weight:700; font-size:13.5px; color:#3a2a30; background:#fbf7f9; }
+
+  .btns { margin-left:36px; display:flex; flex-direction:column; gap:8px; max-width:86%; flex-shrink:0; animation:up .2s ease both; }
+  .btn-p { background:linear-gradient(135deg,#d1908f,#C8869A); color:#fff; border:none; border-radius:99px; padding:14px 20px; font-size:14.5px; font-weight:700; font-family:inherit; cursor:pointer; box-shadow:0 3px 10px rgba(200,134,154,.4); letter-spacing:.02em; }
+  .btn-p:active { transform:scale(.98); }
+
+  /* ぐるぐる(注文処理中オーバーレイ) */
+  .spin-ov { position:absolute; inset:0; background:rgba(249,241,244,.92); z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+  .spinner { width:42px; height:42px; border:4px solid #eed8e0; border-top-color:#C8869A; border-radius:50%; animation:rot .8s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+  .spin-txt { font-size:13px; color:#a86880; font-weight:600; letter-spacing:.04em; }
+
+  /* ---- 3コース選択表 ---- */
+  .course-wrap { margin-left:36px; max-width:92%; flex-shrink:0; animation:up .25s ease both;
+    background:linear-gradient(160deg,#e9dab6,#d9c391);
+    padding:8px; border-radius:10px; box-shadow:0 2px 8px rgba(120,90,40,.25); }
+  .course-tbl { width:100%; border-collapse:collapse; background:#fff; font-size:11px; }
+  .course-tbl th { background:#fff; color:#3a3a3a; font-size:11px; font-weight:700; padding:8px 4px; border:1px solid #e0d5bd; letter-spacing:.03em; }
+  .course-tbl td { border:1px solid #e0d5bd; text-align:center; vertical-align:middle; padding:9px 4px; background:#fff; }
+  .course-tbl tr.sel-row { cursor:pointer; }
+  .course-tbl tr.sel-row.selected td:not(.nm) { background:#fff6e8; }
+  .course-tbl tr.sel-row.selected td { box-shadow:inset 0 0 0 2px #d6a04f; }
+  .course-tbl .nm { width:26%; color:#fff; font-weight:700; font-size:11.5px; line-height:1.5; }
+  .course-tbl .nm .tag { display:inline-block; background:rgba(255,255,255,.25); border:1px solid rgba(255,255,255,.7); border-radius:99px; font-size:9px; padding:1px 7px; margin-bottom:3px; font-weight:600; }
+  .course-tbl .nm-basic { background:#6b6b6b; }
+  .course-tbl .nm-starter { background:#c9a876; }
+  .course-tbl .nm-premium { background:#b5854f; }
+  .price-big { font-size:16px; font-weight:800; color:#2a2a2a; font-family:"Hiragino Mincho ProN",serif; }
+  .price-red { font-size:15px; font-weight:800; color:#d6305f; font-family:"Hiragino Mincho ProN",serif; }
+  .yen { font-size:9px; font-weight:600; color:#666; }
+  .plus { color:#d6305f; font-weight:800; font-size:12px; line-height:1.1; }
+  .free-badge { display:inline-block; background:#d6305f; color:#fff; font-size:9.5px; font-weight:800; padding:2px 8px; border-radius:2px; margin-top:3px; letter-spacing:.05em; }
+  .off-badge { display:inline-block; background:#d6305f; color:#fff; font-size:9px; font-weight:700; padding:2px 7px; border-radius:99px; margin-top:3px; }
+  .off-circle { position:relative; display:inline-block; background:#f5c518; color:#d6305f; font-size:8.5px; font-weight:800; width:34px; height:34px; border-radius:50%; line-height:1.15; padding-top:8px; vertical-align:top; margin-left:2px; }
+  .tap-hint { text-align:center; font-size:10px; color:#8a6a30; padding-top:5px; letter-spacing:.05em; }
+
+  /* ---- コース確認セクション(実ページの「お届け商品の設定/ご注文内容の確認」を再現) ---- */
+  .confirm-sec { margin-left:36px; max-width:92%; flex-shrink:0; animation:up .25s ease both; display:flex; flex-direction:column; gap:10px; }
+  .sec { background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .sec-hd { background:#1e3a8a; color:#fff; font-size:12px; font-weight:700; padding:9px 12px; letter-spacing:.06em; }
+  .sec table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .sec td { padding:8px 10px; border-bottom:.5px solid rgba(0,0,0,.06); vertical-align:top; }
+  .sec td:first-child { color:#8a7a80; width:82px; white-space:nowrap; background:#f7f9fd; }
+  .sec td:last-child { color:#2a2a30; font-weight:500; line-height:1.6; }
+  .sec tr.tot td { font-weight:800; background:#fdfbf5; }
+  .sec tr.tot td:last-child { color:#d6305f; font-size:13px; }
+  /* 注意喚起文(実ページの文言) */
+  .law { background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); font-size:10.5px; color:#6a5a60; line-height:1.75; padding:11px 13px; max-height:150px; overflow-y:auto; }
+  .law b { color:#3a2a30; font-weight:700; }
+
+  /* 実ページ風の「〇〇コースにする」ボタン */
+  .cta-wrap { display:flex; flex-direction:column; align-items:center; gap:0; padding-top:4px; }
+  .cta-badge { background:#ffe94a; color:#d6305f; font-size:11px; font-weight:800; padding:4px 14px; border-radius:99px; letter-spacing:.03em; position:relative; z-index:1; box-shadow:0 1px 3px rgba(0,0,0,.15); }
+  .cta-btn { margin-top:-6px; width:100%; border:none; cursor:pointer; font-family:inherit; color:#fff; text-align:center;
+    background:linear-gradient(180deg,#d9b36a,#b5854f); border-radius:14px; padding:13px 40px 13px 20px;
+    box-shadow:0 4px 12px rgba(140,100,50,.45), inset 0 1px 0 rgba(255,255,255,.45); position:relative; }
+  .cta-btn:active { transform:scale(.98); }
+  .cta-btn .l1 { display:block; font-size:11px; font-weight:600; opacity:.95; letter-spacing:.1em; }
+  .cta-btn .l2 { display:block; font-size:17px; font-weight:800; letter-spacing:.04em; text-shadow:0 1px 2px rgba(90,60,20,.4); }
+  .cta-btn::after { content:'▶'; position:absolute; right:14px; top:50%; transform:translateY(-50%); background:#fff; color:#b5854f; width:22px; height:22px; border-radius:50%; font-size:9px; line-height:22px; text-align:center; }
+  .cta-btn.basic { background:linear-gradient(180deg,#9a9a9a,#6b6b6b); box-shadow:0 4px 12px rgba(60,60,60,.35), inset 0 1px 0 rgba(255,255,255,.35); }
+  .cta-btn.basic::after { color:#6b6b6b; }
+
+  /* 注文完了ページ(モック)オーバーレイ */
+  .done-ov { position:fixed; inset:0; z-index:30; background:#fdfbfc; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:24px; text-align:center; animation:fade .4s ease both; }
+  @keyframes fade { from{opacity:0} to{opacity:1} }
+  .done-ov .check { width:64px; height:64px; border-radius:50%; background:#C8869A; color:#fff; font-size:34px; display:flex; align-items:center; justify-content:center; }
+  .done-ov h2 { font-size:18px; color:#3a2a30; }
+  .done-ov p { font-size:12.5px; color:#8a7a80; line-height:1.8; }
+  .done-ov .mock-note { margin-top:10px; background:#fff9ec; border:.5px solid #f0d8a8; color:#9a6b1a; border-radius:8px; padding:10px 14px; font-size:11px; line-height:1.7; max-width:340px; text-align:left; }
+
+  /* デモ操作バー */
+  .demo-bar { position:fixed; right:8px; top:8px; z-index:40; display:flex; gap:6px; }
+  .demo-bar button { background:#3a2a30; color:#fff; border:none; border-radius:8px; padding:8px 12px; font-size:11.5px; font-family:inherit; cursor:pointer; opacity:.85; }
+  .demo-tag { position:fixed; top:8px; left:8px; z-index:40; background:#3a2a30; color:#fff; font-size:10.5px; padding:4px 10px; border-radius:99px; opacity:.8; }
+  .impl-note { margin-left:36px; max-width:86%; background:#fff9ec; border:.5px solid #f0d8a8; color:#9a6b1a; border-radius:8px; padding:8px 12px; font-size:11px; line-height:1.6; flex-shrink:0; animation:up .2s ease both; }
+</style>
+</head>
+<body>
+
+<div class="demo-tag">🧪 挙動イメージデモ</div>
+
+<!-- 背面: ページの簡易モック -->
+<div class="lp-mock">
+  <div class="hero">
+    <h1>美容液成分4つを<br><b>1本に凝縮</b></h1>
+    <div class="bottle"></div>
+    <div style="font-size:11px;color:#9a7a85;">HugSkin C10 ALL IN SERUM</div>
+  </div>
+</div>
+<div class="lp-dim"></div>
+
+<!-- チャットウィンドウ -->
+<div class="chat">
+  <div class="hd">
+    <div class="av-img"><img src="https://yhozumi-stack.github.io/hugskin-chatbot/img/operator.png" alt=""></div>
+    <div>
+      <div class="hd-name">お申し込みサポート</div>
+      <div class="hd-sub">かんたん注文チャット</div>
+    </div>
+    <button class="x">×</button>
+  </div>
+  <div class="body" id="body"></div>
+</div>
+
+<div class="demo-bar">
+  <button onclick="location.reload()">🔄 最初から再生</button>
+</div>
+
+<script>
+/* デモ演出用スクリプト。実装版は chatbot.js の thanksOffer モジュールが担う */
+const AV = 'https://yhozumi-stack.github.io/hugskin-chatbot/img/operator.png';
+const body = document.getElementById('body');
+const chat = document.querySelector('.chat');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* コース定義(内容は実ページ FireShot Capture 535 から転記・スターターは同構造で数値差替の仮) */
+const COURSES = {
+  basic: {
+    name: 'ベーシックコース',
+    item: 'HugSkin C10 オールインセラム（定期）',
+    badge: '',
+    btnL1: '', btnL2: 'ベーシックコースのまま進む', btnCls: 'basic',
+    law: '・2回目以降は、前回のお届け日から30日前後を目安に11,440円（税込・送料無料）でお届けいたします。解約のお申し出があるまで定期的にお届けする自動更新コースです。<br>' +
+         '<b>・解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きください。</b><br>' +
+         '・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。',
+    rows: [['商品名','HugSkin C10 オールインセラム（定期）'],['単価×個数','2,980円 × 1個'],['送料','0円']],
+    total: '2,980円', point: '0'
+  },
+  starter: {
+    name: 'スターターコース（3回継続）',
+    item: 'HugSkin C10 オールインセラム【スターターコース／定期・3回お約束】',
+    badge: '実質無料＋ずっと540円引き',
+    btnL1: '3回継続', btnL2: 'スターターコースにする', btnCls: '',
+    law: '<b>・【スターターコース／定期・3回お約束】とは、3回（初回含む）のお受取りをお約束いただくことで、お得な特別価格でお求めいただけるコースです。</b><br>' +
+         '・お受け取りをお約束いただいたことでお得にご提供する仕組みですので、<b>3回お受け取り完了前の途中停止、解約、返金等はできません。</b><br>' +
+         '・初回2,980円(税込)、2回目以降は10,900円(税込)でお届けし、3回お受け取りいただいた場合のお支払い総額は24,780円(税込)となります。<br>' +
+         '・2回目以降は、前回のお届け日から30日前後を目安にお届けいたします（全て送料無料です）。<br>' +
+         '・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。<br>' +
+         '<b>・4回目以降の解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。</b>（解約のお申し出があるまで、4回目以降も定期的にお届けする自動更新コースです）<br>' +
+         '・ご注文確定後のキャンセルは承れません。<br>※文言はデモ用の仮です(実ページから自動転記)',
+    rows: [['商品名','HugSkin C10 オールインセラム【スターターコース／定期・3回お約束】'],['単価×個数','2,709円 × 1個'],['送料','0円'],['消費税','271円']],
+    total: '2,980円', point: '2,980'
+  },
+  premium: {
+    name: 'プレミアムコース（6回継続）',
+    item: 'HugSkin C10 オールインセラム【プレミアムコース／定期・6回お約束】',
+    badge: '実質無料＋ずっと1,740円引き',
+    btnL1: '6回継続', btnL2: 'プレミアムコースにする', btnCls: '',
+    law: '<b>・【プレミアムコース／定期・6回お約束】とは、6回（初回含む）のお受取りをお約束いただくことで、お得な特別価格でお求めいただけるコースです。</b><br>' +
+         '・お受け取りをお約束いただいたことでお得にご提供する仕組みですので、<b>6回お受け取り完了前の途中停止、解約、返金等はできません。</b><br>' +
+         '・初回2,980円(税込)、2回目以降は9,700円(税込)でお届けし、6回お受け取りいただいた場合のお支払い総額は51,480円(税込)となります。<br>' +
+         '・初回は「HugSkin C10 オールインセラム」1本をご注文から原則2〜3日程度でお届けいたします。<br>' +
+         '・2回目以降は、前回のお届け日から30日前後を目安にお届けいたします（全て送料無料です）。<br>' +
+         '・お届けサイクルは、ご購入後にマイページより45日・60日への変更も可能です。<br>' +
+         '<b>・7回目以降の解約をご希望の場合は、次回発送予定日の10日前までに「マイページ」よりお手続きをお願いいたします。</b>（解約のお申し出があるまで、7回目以降も定期的にお届けする自動更新コースです）<br>' +
+         '・ご注文確定後のキャンセルは承れません。詳しくはショッピングガイドのキャンセルについてをご確認ください。',
+    rows: [['商品名','HugSkin C10 オールインセラム【プレミアムコース／定期・6回お約束】'],['単価×個数','2,709円 × 1個'],['送料','0円'],['消費税','271円']],
+    total: '2,980円', point: '2,980'
+  },
+};
+
+function el(html) { const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; }
+function scroll() { body.scrollTop = body.scrollHeight; }
+function botRow(html) {
+  return el('<div class="row"><div class="av"><img src="' + AV + '"></div><div class="bb bot">' + html + '</div></div>');
+}
+function userRow(text) {
+  return el('<div class="row user"><div class="bb user">' + text + '</div></div>');
+}
+async function typing(ms) {
+  const t = el('<div class="row"><div class="av"><img src="' + AV + '"></div><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>');
+  body.appendChild(t); scroll();
+  await wait(ms); t.remove();
+}
+async function addBot(html, ms) { await typing(ms || 900); body.appendChild(botRow(html)); scroll(); }
+
+/* ==== 1) LP側: 最終確認 → 注文確定ボタン ==== */
+async function start() {
+  await addBot('ご注文内容をご確認ください✨', 700);
+  body.appendChild(el(`
+    <div class="card">
+      <table>
+        <tr><td>商品</td><td>HugSkin C10 オールインセラム（定期）</td></tr>
+        <tr><td>初回</td><td>2,980円（税込）</td></tr>
+        <tr class="tot"><td>送料</td><td>無料</td></tr>
+      </table>
+    </div>`));
+  scroll();
+  await wait(500);
+  body.appendChild(el(`
+    <div class="btns" id="confirm-btn">
+      <button class="btn-p" onclick="confirmOrder()">この内容で注文を確定する</button>
+    </div>`));
+  scroll();
+}
+
+/* ==== 2) 確定 → ぐるぐる(実際はLP送信→cv_upsellへの遷移がここで起きる) ==== */
+async function confirmOrder() {
+  document.getElementById('confirm-btn').remove();
+  body.appendChild(userRow('この内容で注文を確定する ✔'));
+  scroll();
+  const ov = el('<div class="spin-ov"><div class="spinner"></div><div class="spin-txt">ご注文を処理しています…</div></div>');
+  chat.appendChild(ov);
+  await wait(2200);          /* 実装版: この間にフォーム送信→cv_upsellページ読込→チャット復元 */
+  ov.remove();
+  upsell();
+}
+
+/* ==== 3) cv_upsell側: 3コース選択表 ==== */
+async function upsell() {
+  await addBot('<span class="red">ページを閉じる前に必ずご確認ください。</span>', 800);
+  await addBot('最後に<b>3つのコース</b>から必ずご選択ください。（タップするとボタンがでます）', 900);
+
+  body.appendChild(el(`
+    <div class="course-wrap" id="course-tbl">
+      <table class="course-tbl">
+        <tr><th>コース</th><th>今回の価格</th><th>2回目以降の価格</th></tr>
+        <tr class="sel-row" data-course="basic" onclick="selectRow('basic')">
+          <td class="nm nm-basic">ベーシック<br>コース</td>
+          <td><span class="price-big">2,980</span><span class="yen">円(税込)</span></td>
+          <td><span class="price-big">11,440</span><span class="yen">円(税込)</span></td>
+        </tr>
+        <tr class="sel-row" data-course="starter" onclick="selectRow('starter')">
+          <td class="nm nm-starter"><span class="tag">3回継続</span><br>スターター<br>コース</td>
+          <td>
+            <span class="price-big">2,980</span><span class="yen">円(税込)</span><br>
+            <span class="plus">＋</span><br>
+            <span class="price-red">2,980</span><span class="yen">円分の<br>ポイント</span><br>
+            <span class="free-badge">実質無料</span>
+          </td>
+          <td>
+            <span class="price-red">10,900</span><span class="yen">円(税込)</span><span class="off-circle">約5%<br>OFF</span><br>
+            <span class="off-badge">ずっと540円OFF</span>
+          </td>
+        </tr>
+        <tr class="sel-row" data-course="premium" onclick="selectRow('premium')">
+          <td class="nm nm-premium"><span class="tag">6回継続</span><br>プレミアム<br>コース</td>
+          <td>
+            <span class="price-big">2,980</span><span class="yen">円(税込)</span><br>
+            <span class="plus">＋</span><br>
+            <span class="price-red">2,980</span><span class="yen">円分の<br>ポイント</span><br>
+            <span class="free-badge">実質無料</span>
+          </td>
+          <td>
+            <span class="price-red">9,700</span><span class="yen">円(税込)</span><span class="off-circle">約15%<br>OFF</span><br>
+            <span class="off-badge">ずっと1,740円OFF</span>
+          </td>
+        </tr>
+      </table>
+      <div class="tap-hint">▲ ご希望のコースの行をタップしてください</div>
+    </div>`));
+  scroll();
+}
+
+/* ==== 4) 行タップ → 確認内容+「〇〇コースにする」ボタンがセットで出現(実ページと同じ構造) ==== */
+let locked = false;
+function selectRow(course) {
+  if (locked) return;
+  document.querySelectorAll('.sel-row').forEach(r => r.classList.toggle('selected', r.dataset.course === course));
+  const old = document.getElementById('confirm-sec');
+  if (old) old.remove();
+  const c = COURSES[course];
+  if (course === 'basic') {
+    /* ベーシック=現在の注文のまま。確認画面・注意喚起文なしでボタンのみ */
+    body.appendChild(el(`
+      <div class="confirm-sec" id="confirm-sec">
+        <div class="cta-wrap">
+          <button class="cta-btn basic" onclick="pick('basic')"><span class="l2">${c.btnL2}</span></button>
+        </div>
+      </div>`));
+    scroll();
+    return;
+  }
+  body.appendChild(el(`
+    <div class="confirm-sec" id="confirm-sec">
+      <div class="sec">
+        <div class="sec-hd">お届け商品の設定</div>
+        <table>
+          <tr><td>商品</td><td>${c.item}</td></tr>
+          <tr><td>お届け予定</td><td>1回目: ご注文から2〜3日程度<br>2回目: 2026-10-06</td></tr>
+        </table>
+      </div>
+      <div class="sec">
+        <div class="sec-hd">ご注文内容の確認</div>
+        <table>
+          <tr><td>お名前</td><td>テスト保積 様</td></tr>
+          <tr><td>お届け先</td><td>〒173-0023 東京都板橋区大山町…</td></tr>
+          ${c.rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('')}
+          <tr class="tot"><td>合計</td><td>${c.total}</td></tr>
+          <tr><td>付与予定<br>ポイント</td><td>${c.point}</td></tr>
+        </table>
+      </div>
+      <div class="law">${c.law}</div>
+      <div class="cta-wrap">
+        ${c.badge ? '<div class="cta-badge">' + c.badge + '</div>' : ''}
+        <button class="cta-btn ${c.btnCls}" onclick="pick('${course}')">
+          ${c.btnL1 ? '<span class="l1">' + c.btnL1 + '</span>' : ''}
+          <span class="l2">${c.btnL2}</span>
+        </button>
+      </div>
+    </div>`));
+  scroll();
+}
+
+/* ==== 5) 「〇〇コースにする」= そのまま確定 ==== */
+async function pick(course) {
+  locked = true;
+  const c = COURSES[course];
+  body.appendChild(userRow(c.btnL2));
+  scroll();
+
+  if (course === 'basic') {
+    body.appendChild(el('<div class="impl-note">💡 実装版: フォームは送信せず(ご注文は現在の内容のまま確定済み)、LINE誘導LPへ遷移します。</div>'));
+    scroll();
+    await addBot('ご注文ありがとうございました🎉', 900);
+    await wait(1300);
+    location.href = 'https://hugskin.shop/lp?u=thanks_hugskin_line';   /* 擬似LINE誘導ページ */
+    return;
+  }
+
+  body.appendChild(el('<div class="impl-note">💡 実装版: この瞬間に #form_cv_upsell の variant を' + (course==='premium'?'6回継続':'3回継続') + 'に設定して送信 → ecforceが注文完了ページへ遷移させます。</div>'));
+  scroll();
+  await addBot('ご注文ありがとうございました🎉', 900);
+  await wait(1300);
+  document.body.appendChild(el(`
+    <div class="done-ov">
+      <div class="check">✓</div>
+      <h2>ご注文ありがとうございます</h2>
+      <p>${c.name}で承りました。<br>ご登録のメールアドレスに確認メールをお送りしました。</p>
+      <div class="mock-note">🧪 デモ用のモック画面です。実装版ではecforce標準の注文完了ページ（サンクスページ）がそのまま表示されます。</div>
+    </div>`));
+}
+
+start();
+</script>
+</body>
+</html>

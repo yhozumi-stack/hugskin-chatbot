@@ -344,6 +344,25 @@ nativeFields: true,   // 転記レス実験ON(hideForm: true と併用推奨)
 - 動作確認: `preview/?scenario=formplus&cfg={"nativeFields":true}`(URLエンコード: `cfg=%7B%22nativeFields%22%3Atrue%7D`)。チャット内inputのname属性が `order[...]` になっていれば借用成功
 - 背景資料: Notion「a-works自社チャットのこと」(2026-08-31会議・reformuxスライド全13枚の読み取りを追記済み)
 
+### レシピ22: サンクスオファーのチャット化(thanksOffer + thanksoffer.js・v3.34.0〜・LP個別・既定OFF)
+注文完了直後のサンクスオファーページ(`/lp/cv_upsell`)を「チャットの皮」で覆い、3コース選択(ベーシック/スターター/プレミアム)を**注文フォームのチャットの続き**として見せる。BOTCHAN Payment等がやる「サンクスページに遷移せずチャット内でアップセル」を自社ボットで再現。決済・受注切替は**ecforce純正のサンクスオファー機能そのまま**(チャットは実フォーム`#form_cv_upsell`の`#submit`を本物のままクリックするだけ)なので、与信・二重購入ガードはecforce責任範囲。
+**2ファイル構成(両方タグで設置)**:
+1. **注文LP側**: 既存の`chatbot.js`タグに `thanksOffer: true` を1行足す → ページ遷移(cv_upsellへの送信)時に会話ログHTMLを`sessionStorage['hs_thanks_history']`へ保存(pagehide)。本体の変更はこの保存のみ=**未設定LPは1ミリも変わらない**
+2. **cv_upsellページ側**: **別モジュール`thanksoffer.js`**のタグを新規設置(`tags/ecforce_tag_thanksoffer.html`)。履歴を復元し、赤字注意→3コース表→行タップで確認内容+CTAを描画
+```html
+<!-- cv_upsellページのタグ -->
+<script>window.HS_THANKS = { /* basicUrl等を上書きしたい時だけ */ };</script>
+<script src="https://yhozumi-stack.github.io/hugskin-chatbot/thanksoffer.js?v=1"></script>
+```
+- **実ページ照合済み(2026-09-03 セッション有効なcv_upsellで確認)**: コース行は`.bg02_column_01`(ベーシック/div)・`_02`(スターター/a)・`_03`(プレミアム/a)の行画像。チャットは**行画像をクローンして表に使い、タップを実行画像の実jQueryハンドラへ中継**する(実ハンドラが`#variant_id`を21/22に切替え+`#pseudo-confirm`更新+`.cta_box`表示+`.qa-caution`差し替えまで全部やる)。CTAは`#submit`の背景画像(`starter_btn.png`/`premium_btn.png`)、ベーシックは`.cta_btn.btn01 a`(basic_btn.png)の遷移先(LINE誘導LP `lp?u=thanks_hugskin_line`)
+- **出し分け(保積さん指定)**: スターター/プレミアム=確認内容(pseudo-confirm)+注意喚起文(qa-caution・variant追従)+実ボタン画像→1タップで確定。**ベーシック=確認画面・注意喚起なしでボタン(basic_btn)のみ**→タップでLINE誘導LPへ(送信しない)。中間の確認専用ボタンは挟まない(離脱増を避ける)
+- **フェイルセーフ**: `#form_cv_upsell`+`take_cv_upsell_offer`マーカーが無ければ**何も描画しない**(素のページ=現状挙動)。boot/描画は全てtry/catchで包み、エラー時は覆いを外す(`failOpen`)。×で閉じると素のページ+「チャットに戻る」ボタン
+- **段階導入ゲート `onlyU`**: `HS_THANKS.onlyU: ['test_ins29np_0810']` で指定広告コード(u=)の注文だけ発動。**本番cv_upsellページにタグを置いたまま、テスト注文だけでフル遷移体験を実機確認できる**(他のお客様は素のページのまま)。テストOK後にonlyUを消して全員展開。実機テスト手順: ①push ②テストLP(u=test系)のチャットタグに`thanksOffer: true`追記 ③cv_upsellにonlyU付きタグ設置 ④テスト注文→LPチャットで確定→cv_upsellでチャット継続を確認
+- コンテンツ(コース表・ボタン・注意喚起文)は**全部ページの実DOMから取る**ので、CRM/管理画面でオファーを変えればチャットも自動追従=二重管理ゼロ
+- 計測: `hs_chat_thanks_*`(view/restore/row_○/cta_○/close/reopen。hs_chat_前方一致で既存集計に乗る)
+- 動作確認: `preview/thanks_offer_test.html`(実ページDOM再現モック+チェックリスト8項目。`?nohist`=履歴なし/`?nodetect`=フェイルセーフ/`?basic=1`=ベーシック遷移確認)。挙動イメージ共有用の別デモは `preview/thanks_offer_demo.html`
+- ⚠️セレクタはcv_upsellページ改修で変わりうる。ページ変更時は`HS_THANKS.sel`で上書き可(既定はchatbot.js照合と同じ作法で実ページ確認済み)
+
 ### レシピ7: 動作確認(変更したら必ずやる)
 ```bash
 cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
