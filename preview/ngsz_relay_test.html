@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>【プレビュー】カゴ落ちReCV直接連携(ngszRelay)テスト</title>
+<style>
+  body { font-family: 'Hiragino Sans', sans-serif; margin: 0 auto; max-width: 680px; padding: 16px 16px 120px; color: #333; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 15px; }
+  form { display: grid; gap: 8px; max-width: 480px; }
+  label { font-size: 12px; }
+  input, select { font-size: 14px; padding: 6px; width: 100%; box-sizing: border-box; }
+  .howto { background: #f6f9ff; border: 1px solid #b9c8e8; padding: 10px 14px; font-size: 12.5px; line-height: 1.8; }
+  .check { background: #fffdf2; border: 1px solid #e6d9a8; padding: 10px 14px; font-size: 12.5px; line-height: 1.9; margin-top: 10px; }
+  .panel { position: fixed; right: 8px; bottom: 8px; width: 320px; max-height: 52vh; overflow: auto;
+           background: #10202c; color: #d8f0ff; font: 11.5px/1.6 Menlo, monospace; padding: 10px;
+           border-radius: 8px; z-index: 2147483000; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  .panel h3 { margin: 0 0 6px; font-size: 12px; color: #7fe0a0; }
+  .panel .sec { margin-top: 8px; border-top: 1px solid #2c4657; padding-top: 6px; }
+  .panel .ok { color: #7fe0a0; } .panel .ng { color: #ff9a9a; } .panel .mute { color: #86a3b5; }
+  .panel .row { word-break: break-all; }
+</style>
+</head>
+<body>
+
+<h1>カゴ落ちReCV直接連携(ngszRelay)の再現ページ</h1>
+
+<div class="howto">
+  <b>テストモード(URLパラメータ):</b><br>
+  ・<a href="ngsz_relay_test.html">パラメータ無し</a> … <b>フラグOFF(既定)</b>。ReCVスタブは読み込むが、
+    チャットを完走しても <b>sendPhone / sendMail が一度も呼ばれない</b>ことを確認する<br>
+  ・<a href="ngsz_relay_test.html?relay=1">?relay=1</a> … <b>ngszRelay: true</b>。ご連絡先(メール+電話)の「次へ」で
+    <b>sendMail・sendPhone が正規化済みの値で各1回</b>呼ばれる<br>
+  ・<a href="ngsz_relay_test.html?relay=1">?relay=1 のまま✎修正</a> … 回答バブルの✎でご連絡先を出し直し、
+    <b>同じ値のまま確定 → 再送されない</b> / <b>値を変えて確定 → 新しい値で再送される</b>(呼び出し回数で判定)<br>
+  ・<a href="ngsz_relay_test.html?relay=1&nostub=1">?relay=1&amp;nostub=1</a> … <b>ReCVタグが無いページ</b>(window.ngszV2 が存在しない)。
+    エラーにならず<b>チャットは最後まで完走</b>し、2秒×5回のリトライ枯渇で
+    <b>dataLayer に hs_chat_lead_relay_miss が1回だけ</b>出る(約10秒後)<br>
+  ・<a href="ngsz_relay_test.html?relay=1&late=1">?relay=1&amp;late=1</a> … <b>ReCVタグを3秒遅延で注入</b>(<code>?late=12</code> のように秒数指定も可)。
+    リトライで拾って送信されること<br>
+  &nbsp;&nbsp;↳ <b>⚠️この遅延は「ページ読込」からの秒数</b>。手で操作するとご連絡先の確定はどうしても遅延より後になり、
+    最初の呼び出しで即成功してしまう(=リトライ経路を通らない)。<b>リトライ経路そのものを確認したい時は
+    <a href="ngsz_relay_test.html?relay=1&nostub=1">?relay=1&amp;nostub=1</a> でご連絡先を確定させ、
+    右下パネルの「今すぐReCVタグを注入する」を10秒以内に押す</b>(2秒×5回のリトライが拾って送信する)<br>
+  <br>
+  <b>右下の黒いパネル</b>にスタブの呼び出しログと dataLayer の relay 系イベントが出る。
+  コンソールで <code>window.__ngszCalls</code>(呼び出し配列)・<code>window.dataLayer</code> でも同じ内容を確認できる。<br>
+  ※このページのシナリオは <code>standard</code>、質問を短くするため
+  <code>skip: { password, sex }</code> を入れてある(メール・電話は必ず質問する)。
+</div>
+
+<div class="check">
+  <b>チェックリスト</b><br>
+  ① パラメータ無し … 完走しても呼び出し 0 件(既定OFFの確認)<br>
+  ② <code>?relay=1</code> … sendMail=1回 / sendPhone=1回、値がチャットの入力どおり(電話はハイフン除去済み)<br>
+  ③ <code>?relay=1</code> + ✎で同値確定 … 呼び出し回数が増えない<br>
+  ④ <code>?relay=1</code> + ✎で値変更 … 変えた項目だけ新値で+1回<br>
+  ⑤ <code>?relay=1&amp;nostub=1</code> … チャットが最後まで進む/hs_chat_lead_relay_miss が1回だけ<br>
+  ⑥ <code>?relay=1&amp;nostub=1</code> でご連絡先を確定 → 10秒以内に「今すぐReCVタグを注入する」を押す …
+    リトライが拾って送信され、miss は出ない<br>
+  ⑦ どのモードでも、送信された値は<b>電話とメールだけ</b>(氏名・住所・パスワード・カードが渡っていない)
+</div>
+
+<h2>ご注文フォーム（モック・実LPと同name属性）</h2>
+<form action="/lp" method="post" onsubmit="return false">
+  <table><tr class="input_variant_ec"><td>
+    <div class="form_group_ec">HugSkin C10 オールインセラム【定期】_0012</div>
+  </td></tr></table>
+  <input type="hidden" name="order[order_items_attributes][][variant_id]" value="23">
+  <input type="hidden" name="order[order_items_attributes][][quantity]" value="1">
+  <label>お名前<input name="order[billing_address_attributes][name01]"></label>
+  <label>フリガナ<input name="order[billing_address_attributes][kana01]"></label>
+  <label>郵便番号<input name="order[billing_address_attributes][zip01]"></label>
+  <label>都道府県
+    <select name="order[billing_address_attributes][prefecture_id]">
+      <option value="">選択してください</option>
+      <option value="13">東京都</option><option value="27">大阪府</option>
+    </select>
+  </label>
+  <label>住所1<input name="order[billing_address_attributes][addr01]"></label>
+  <label>住所2<input name="order[billing_address_attributes][addr02]"></label>
+  <label>電話番号<input name="order[billing_address_attributes][tel01]"></label>
+  <label>メールアドレス<input type="email" name="order[email]"></label>
+  <label>パスワード<input type="password" name="order[customer_attributes][password]"></label>
+  <label>性別
+    <select name="order[customer_attributes][sex_id]">
+      <option value="">選択してください</option><option value="1">男性</option><option value="2">女性</option>
+    </select>
+  </label>
+  <label>生年月日
+    <select name="order[customer_attributes][birth(1i)]"><option value=""></option><option value="1990">1990</option><option value="1992">1992</option></select>
+    <select name="order[customer_attributes][birth(2i)]"><option value=""></option><option value="1">1</option><option value="6">6</option><option value="12">12</option></select>
+    <select name="order[customer_attributes][birth(3i)]"><option value=""></option><option value="1">1</option><option value="15">15</option><option value="31">31</option></select>
+  </label>
+  <label>お支払い方法
+    <select name="order[payment_attributes][payment_method_id]">
+      <option value="">選択してください</option>
+      <option value="21">クレジットカード一括</option>
+      <option value="102">NP後払いリアルタイムwiz</option>
+    </select>
+  </label>
+  <label>カード番号<input name="order[payment_attributes][source_attributes][number]"></label>
+  <label>有効期限(月)
+    <select name="order[payment_attributes][source_attributes][month]">
+      <option value=""></option><option value="1">1</option><option value="4">4</option><option value="9">9</option><option value="12">12</option>
+    </select>
+  </label>
+  <label>有効期限(年・下2桁)
+    <select name="order[payment_attributes][source_attributes][year]">
+      <option value=""></option><option value="27">27</option><option value="28">28</option><option value="30">30</option>
+    </select>
+  </label>
+  <label>カード名義<input name="order[payment_attributes][source_attributes][name]"></label>
+
+  <table style="font-size:12px">
+    <tr><td class="qa-product_name">HugSkin C10 オールインセラム【定期】_0012</td>
+        <td class="qa-product_price">2,709円</td><td class="qa-product_quantity">1 個</td></tr>
+    <tr><td>送料 <span class="qa-deliv_fee">0円</span></td>
+        <td>消費税 <span class="qa-tax">271円</span></td>
+        <td>合計 <span class="qa-total">2,980円</span></td></tr>
+  </table>
+  <label style="display:none" id="consent-row">
+    <input type="checkbox" name="order[payment_attributes][source_attributes][consent]" style="width:auto"> 後払い規約に同意する
+  </label>
+  <input type="submit" class="submit_button_complete_ec" value="ご注文手続きへ"
+    onclick="window.__lpSubmitClicked = true; document.getElementById('submitted').style.display='block'; return false;">
+</form>
+
+<div id="submitted" style="display:none;margin:14px 0;padding:10px;background:#eefbee;border:1px solid #9c9;font-size:12px">
+  ✅ 注文ボタンが押されました(モック)。= チャットが最後まで完走した証拠
+</div>
+
+<div class="panel" id="panel"><h3>ReCV(ngszV2)スタブ モニタ</h3><div id="panel-body">読み込み中…</div></div>
+
+<script>
+window.dataLayer = window.dataLayer || [];   /* GTM相当(計測イベントの確認用) */
+window.__ngszCalls = [];                     /* スタブの呼び出しログ(コンソールからも見られる) */
+
+(function () {
+  var q = location.search;
+  var has = function (k) { return new RegExp('[?&]' + k + '(=|&|$)').test(q); };
+  var num = function (k, def) { var m = q.match(new RegExp('[?&]' + k + '=(\\d+)')); return m ? +m[1] : def; };
+
+  /* ---------- ReCV(nogasazu)の ngsz_v2.js が作る window.ngszV2 のスタブ ----------
+     実物は session.sendPhone(値) / session.sendMail(値) を持つ(2026-09-10 実LPで実測)。
+     ここでは呼び出しを記録するだけ。値は一切外部送信しない */
+  function installStub(reason) {
+    if (window.ngszV2) return;
+    window.ngszV2 = {
+      session: {
+        sendPhone: function (v) { window.__ngszCalls.push({ m: 'sendPhone', v: v, t: new Date() }); },
+        sendMail:  function (v) { window.__ngszCalls.push({ m: 'sendMail',  v: v, t: new Date() }); },
+      },
+    };
+    window.__ngszStubAt = new Date();
+    window.__ngszStubReason = reason;
+  }
+
+  var lateMs = 0;
+  if (has('nostub')) {
+    /* ReCVタグが無いページ = window.ngszV2 を作らない(リトライ枯渇→missの確認) */
+  } else if (has('late')) {
+    lateMs = num('late', 3) * 1000;              /* ?late=1 → 3秒(既定) / ?late=12 → 12秒 */
+    if (num('late', 3) === 1) lateMs = 3000;     /* ?late=1 は「フラグ」なので3秒扱い(指示書の既定) */
+    setTimeout(function () { installStub('遅延注入(' + (lateMs / 1000) + '秒)'); }, lateMs);
+  } else {
+    installStub('即時');
+  }
+
+  /* --- タグ(window.HS_CHAT)の再現 --- */
+  window.HS_CHAT = {
+    scenario: 'standard',
+    mode: 'float',
+    autoOpen: 'immediate',
+    opening: { stockCheck: false },
+    /* 質問数を減らしてテストを速くする(メール・電話は必ず質問する)。
+       ※生年月日(type:'birth')は skip の対象外なので質問は残る */
+    skip: { password: 'auto', sex: '2' },
+  };
+  /* ★ここがテスト対象: 既定OFF。?relay=1 のときだけタグでONにする */
+  if (has('relay')) window.HS_CHAT.ngszRelay = true;
+
+  /* ---------- モニタパネル ---------- */
+  var body = document.getElementById('panel-body');
+  function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }); }
+  function render() {
+    var relayOn = !!(window.HS_CHAT && window.HS_CHAT.ngszRelay);
+    var calls = window.__ngszCalls;
+    var mail = calls.filter(function (c) { return c.m === 'sendMail'; });
+    var tel  = calls.filter(function (c) { return c.m === 'sendPhone'; });
+    var ev = (window.dataLayer || []).filter(function (e) {
+      return e && typeof e.event === 'string' && e.event.indexOf('hs_chat_lead_relay') === 0;
+    });
+    var miss = ev.filter(function (e) { return e.event === 'hs_chat_lead_relay_miss'; });
+    var html = '';
+    html += '<div class="row">モード: <b>' + (relayOn ? '<span class="ok">ngszRelay: true</span>' : '<span class="mute">OFF(既定)</span>') + '</b></div>';
+    html += '<div class="row mute">ngszV2: ' + (window.ngszV2 ? ('あり(' + (window.__ngszStubReason || '') + ')') : 'なし') + '</div>';
+    /* リトライ経路を人の手で確実に再現するボタン(?late= はページ読込基準なので
+       手動操作では狙った瞬間に注入できない。ReCVタグが無い状態でご連絡先を確定
+       →10秒以内にこれを押す=リトライが拾って送信する、が確認できる) */
+    if (!window.ngszV2) html += '<div class="row"><button id="inject-now" style="margin:4px 0;font:11px Menlo">今すぐReCVタグを注入する</button></div>';
+    html += '<div class="sec"><b>スタブ呼び出し(' + calls.length + '件)</b>'
+          + ' <span class="mute">sendMail=' + mail.length + ' / sendPhone=' + tel.length + '</span></div>';
+    if (!calls.length) html += '<div class="row mute">（まだ呼ばれていません）</div>';
+    calls.slice(-12).forEach(function (c) {
+      html += '<div class="row"><span class="ok">' + c.t.toLocaleTimeString() + '</span> '
+            + c.m + '(<b>' + esc(c.v) + '</b>)</div>';
+    });
+    html += '<div class="sec"><b>dataLayer relayイベント(' + ev.length + '件)</b></div>';
+    if (!ev.length) html += '<div class="row mute">（まだありません）</div>';
+    ev.slice(-12).forEach(function (e) {
+      html += '<div class="row' + (e.event === 'hs_chat_lead_relay_miss' ? ' ng' : '') + '">' + esc(e.event) + '</div>';
+    });
+    if (miss.length > 1) html += '<div class="row ng">⚠️ miss が' + miss.length + '回出ている(期待は1回だけ)</div>';
+    /* 値が電話・メール以外を含んでいないかの簡易ガード(⑦の確認補助) */
+    var leaked = calls.filter(function (c) {
+      var v = String(c.v || '');
+      return !(/^[0-9+\-() ]+$/.test(v) || v.indexOf('@') > 0);
+    });
+    if (leaked.length) html += '<div class="row ng">⚠️ 電話/メール以外らしき値が渡っている: ' + esc(leaked[0].v) + '</div>';
+    body.innerHTML = html;
+    var inj = document.getElementById('inject-now');
+    if (inj) inj.onclick = function () { installStub('手動注入'); render(); };
+  }
+  setInterval(render, 400);
+  render();
+})();
+</script>
+
+<script>
+  /* 入力されたフィールドを緑枠にする(転記の可視化。preview/index.html と同じ) */
+  document.addEventListener('input', function (e) {
+    if (e.target.name && e.target.value) e.target.style.outline = '2px solid #7bc47f';
+  }, true);
+  /* 後払い選択で同意チェック欄が出る実LPの挙動を模擬 */
+  document.querySelector('[name="order[payment_attributes][payment_method_id]"]')
+    .addEventListener('change', function (e) {
+      document.getElementById('consent-row').style.display = e.target.value === '102' ? 'block' : 'none';
+    });
+</script>
+<!-- ローカル確認では常に最新のchatbot.jsを読む(ブラウザキャッシュ事故防止) -->
+<script>document.write('<script src="../chatbot.js?ts=' + Date.now() + '" defer><\/script>');</script>
+
+</body>
+</html>

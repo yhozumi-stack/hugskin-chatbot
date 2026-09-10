@@ -368,6 +368,39 @@ nativeFields: true,   // 転記レス実験ON(hideForm: true と併用推奨)
 - 動作確認: `preview/thanks_offer_test.html`(実ページDOM再現モック+チェックリスト8項目。`?nohist`=履歴なし/`?nodetect`=フェイルセーフ/`?basic=1`=ベーシック遷移確認)。挙動イメージ共有用の別デモは `preview/thanks_offer_demo.html`
 - ⚠️セレクタはcv_upsellページ改修で変わりうる。ページ変更時は`HS_THANKS.sel`で上書き可(既定はchatbot.js照合と同じ作法で実ページ確認済み)
 
+### レシピ23: カゴ落ちReCV直接連携(ngszRelay・v3.36.0〜・LP個別・既定OFF・push不要)
+チャットで入力された**電話番号とメールアドレスを、カゴ落ちツールReCV(nogasazu)へ直接渡す**。
+タグに1行足すだけ(**既定OFFなので、書いたLPだけで有効**):
+```js
+ngszRelay: true,
+```
+- **なぜ必要か(2026-09-10 実コードで確定・再調査不要)**: ReCVのタグ`ngsz_v2.js`は電話・メール欄を
+  **`focusout` でしか捕捉しない**(`capturePhoneBySelector`/`captureMailBySelector` が "focusout" 固定)。
+  チャットの転記(earlyLeadCapture)は **`input` しか発火しない**(ecforceのAJAX再描画を誘発しないための
+  v3.9.1の教訓)ので、LPフォームに転記してもReCVは永久に気づかない。さらにReCVは**Shadow DOM非対応**
+  (`shadowRoot`/`attachShadow`の記述ゼロ)なのでチャット入力欄自体も見えない。
+  この2点が重なり、**HugSkinのカゴ落ちSMSは2026-07-13から実質停止していた**
+  (生フォームに直接入力した人だけ拾えていたが、即チャット型LPでチャット内完結が主流になり消滅)
+- **やっていること**: `earlyLeadCapture` のタイミングで `window.ngszV2.session.sendMail(メール)` /
+  `sendPhone(電話)` を直接呼ぶ。**LPフォームには一切触らない**(実フォームへの`focusout`発火は
+  v3.9.1の事故経緯があるため**実装禁止・却下済み**)。値はバリデーション通過後の正規化済み(`norm:'tel'`)
+- **送るのは電話とメールだけ**。氏名・住所・生年月日・パスワード・カード情報は絶対に渡さない
+- 重複送信ガードあり(同じ値は再送しない/✎で値を変えた時だけ新値を再送)。ReCVタグの読込が
+  チャットより遅い場合に備えて**2秒×5回リトライ**する
+- 計測: `hs_chat_lead_relay_mail` / `hs_chat_lead_relay_tel`(送信成功) /
+  `hs_chat_lead_relay_miss`(リトライ枯渇=ReCVに到達できず。セッション1回だけ)。
+  `hs_chat_` 前方一致なので既存のGTM/GA4/毎朝5時のシート集計にそのまま乗る
+- **⚠️ `sendPhone`/`sendMail` はReCVの内部メソッドで公式APIではない**。ベンダーのバージョンアップで
+  消える可能性がある。**ReCVのSMS送信数が落ちた / `_miss` が立った時はまずここを疑う**
+  (`ngsz_v2.js` を取得してメソッド名が変わっていないか確認する)
+- 導入順序(本番LPをいきなり触らない): ①preview確認 ②ReCVの「テスト稼働用送信先」に検証番号を登録
+  → **テスト稼働ページで実際にSMSが届くか確認** ③届いてから本番LPのタグでON ④数日、ReCVのページ分析で送信数が戻ったか確認
+- ⚠️skip機能でemail/telをダミーにしているLPでは、ダミー宛てにSMS/メールが飛ぶ(=届かない)。
+  カゴ落ちを効かせたいLPではemail/telは必ず質問する(レシピ9の注意と同じ)
+- 動作確認: `preview/ngsz_relay_test.html`(ページ上部にテストモード一覧+チェックリスト。
+  `?relay=1`=ON / パラメータ無し=既定OFFの確認 / `?relay=1&nostub=1`=ReCVタグ不在→missの確認 /
+  `?relay=1&late=1`=遅延ロード。右下パネルに呼び出しログとdataLayerイベントが出る)
+
 ### レシピ7: 動作確認(変更したら必ずやる)
 ```bash
 cd /Users/hozumiyuuki/クロード用/Hugskin/hugskin-chatbot
@@ -507,6 +540,14 @@ python3 -m http.server 8940
 - **iframeタグは不要**(form-plus時代の遺物。あれはチャットがiframe内にあったから必要だった。今のチャットはページ内直描画なので入れる場所自体が無い)
 - **LPタグ・CVタグは従来どおり設置でOK**(nogasazu側の設定変更も不要)
 - チャットの入力欄はShadow DOM内でLP側の計測タグから**見えない**。その代わりエンジンが**メール・電話の確定と同時にLPフォームの実フィールドへ即転記**する(earlyLeadCapture)ので、nogasazuのLPタグ(`order[billing_address_attributes][tel01]`等のセレクタ)がその瞬間に捕捉する=**チャット途中離脱もカゴ落ち捕捉できる**(form-plusのiframeタグ相当の挙動)
+- **🚨【訂正・2026-09-10 実コードで確定】上の「即転記すればnogasazuが捕捉する」は ReCV(nogasazu) には当てはまらない**:
+  ReCVのタグ`ngsz_v2.js`は電話・メール欄を **`focusout` でしか捕捉しない**(`capturePhoneBySelector`/`captureMailBySelector` が "focusout" 固定)。
+  earlyLeadCapture は **`input` しか発火させない**(ecforceのAJAX再描画を誘発しないためのv3.9.1の教訓)ので、
+  **転記してもReCVは永久に気づかない**。さらにReCVは Shadow DOM 非対応なのでチャット入力欄も見えない。
+  これによりHugSkinのカゴ落ちSMSは**2026-07-13から実質停止**していた。
+  → **ReCVを使うLPは、タグに `ngszRelay: true` を書くこと(レシピ23・v3.36.0〜)**。
+  ReCVの`session.sendPhone`/`sendMail`を直接呼んで値を渡す(既定OFF=書いたLPだけ有効)。
+  ※他のカゴ落ちツールで `input` を見るものについては従来どおり即転記だけで捕捉される
 - hideForm(レシピ16)と併用可(非表示フィールドでも値と input イベントは発火するため捕捉される)
 - ⚠️skip機能でemail/telをダミーにしているLPでは、カゴ落ちメール/SMSがダミー宛てに飛ぶ(=届かない)。カゴ落ち施策を効かせたいLPではemail/telは聞くこと
 

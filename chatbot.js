@@ -1,5 +1,14 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.35.0
+    HugSkin 獲得チャットボット v3.36.0
+    (v3.36.0: カゴ落ちツールReCV(nogasazu)への直接連携 ngszRelay を追加(既定OFF)。
+     ReCVのタグ(ngsz_v2.js)は電話・メール欄を focusout でしか捕捉せず、
+     さらにShadow DOM非対応のためチャット入力欄も見えない(2026-09-10 実コード実測)。
+     チャットの転記は input しか発火しない(v3.9.1の教訓)ので、ReCVは値に永久に
+     気づけずカゴ落ちSMSが2026-07-13から実質停止していた。対処として
+     earlyLeadCapture のタイミングで window.ngszV2.session.sendPhone/sendMail を
+     直接呼ぶ。送るのは電話・メールのみ。タグに ngszRelay: true で有効化=
+     既存LPは1ミリも変わらない。⚠️非公式(内部)APIなので死活は
+     hs_chat_lead_relay_tel/_mail/_miss で監視する。レシピ23)
     (v3.35.0: 与信NGリカバリーに代引きの選択肢 paymentFallback.daibiki を追加(既定OFF)。
      タグで daibiki: true にしたLPだけ、与信NG画面でLPフォームに代引きの選択肢が
      ある時「クレジットカード/代金引換」の2択を出す。代引きは手数料で合計が変わる
@@ -343,6 +352,25 @@ var DEFAULTS = {
      transfer()は従来どおり走る=同値上書きの安全網。hideForm併用可(むしろ推奨)。
      ⚠️ABテスト用の実験機能。本採用判断は有意差ベースで(reformux検証の作法) */
   nativeFields: false,
+  /* カゴ落ちツールReCV(nogasazu)への直接連携(既定OFF・v3.36.0・レシピ23)。
+     trueにしたLPだけ、チャットでメール・電話が確定した時点(earlyLeadCapture)で
+     ReCVに値を直接渡す。送るのは電話・メールのみ(氏名・住所・パスワード・
+     カードは絶対に送らない)。
+     なぜ必要か(2026-09-10 実コード実測):
+       ・ReCVのタグ(ngsz_v2.js)は電話・メール欄を focusout でしか捕捉しない
+         (capturePhoneBySelector / captureMailBySelector が "focusout" 固定)。
+         チャットの転記は input しか発火しない(ecforceのAJAX再描画を誘発しない
+         ためのv3.9.1の教訓)ので、LPフォームに転記してもReCVは永久に気づかない
+       ・ReCVはShadow DOM非対応(shadowRoot/attachShadowの記述ゼロ)なので、
+         セレクタを足してもチャット入力欄自体が見えない
+       → 実フォームに focusout を投げる案は v3.9.1 の事故経緯があるため却下。
+         ReCV側のメソッドを直接呼ぶ形にした(LPフォームには一切触らない)
+     ⚠️ window.ngszV2.session.sendPhone / sendMail は
+        ReCVの内部メソッドであり公式APIではない。ベンダーのバージョンアップで
+        消える可能性がある。死活監視のため計測イベントを必ず見ること:
+        hs_chat_lead_relay_tel / _mail(送信成功) / _miss(ReCVに到達できず)。
+        「SMS送信数が落ちた」「_miss が立った」時はまずここを疑う */
+  ngszRelay: false,
   zipApi: 'https://zipcloud.ibsnet.co.jp/api/search?zipcode=',
 };
 
@@ -1334,6 +1362,10 @@ function summaryIndex() {
    「入力され次第」埋めることで、チャット途中離脱でもカゴ落ち捕捉が効くようにする(form-plusのiframeタグ相当)。
    テキスト欄のinputイベントのみ発火=ecforceのAJAX再描画は誘発しない(v3.9.1の教訓に準拠) */
 function earlyLeadCapture() {
+  /* カゴ落ちReCV(nogasazu)への直接連携(既定OFF・ngszRelay有効LPのみ動く・v3.36.0)。
+     ReCVタグへ値を渡すだけでLPフォームとは無関係なので、フォームの有無や
+     transferMode に依存させない=この行より下の既存の転記ロジックとは完全に独立 */
+  ngszRelay();
   try {
     if (CFG.transferMode === 'redirect') return;
     var form = findLocalForm();
@@ -1345,6 +1377,77 @@ function earlyLeadCapture() {
     }
     if (answers.tel) setField(form, 'order[billing_address_attributes][tel01]', answers.tel);
   } catch (e) {}
+}
+
+/* ---------- カゴ落ちReCV(nogasazu)への直接連携(ngszRelay・既定OFF・v3.36.0・レシピ23) ----------
+   ⚠️⚠️ ここで呼んでいる window.ngszV2.session.sendPhone / sendMail は
+   ReCV(nogasazu)の【内部メソッドであり公式APIではない】。ベンダーの
+   バージョンアップで予告なく消える可能性がある。消えたことに気づけるよう、
+   送信成功は hs_chat_lead_relay_tel / _mail、到達できなかった場合は
+   hs_chat_lead_relay_miss を計測に出している(hs_chat_ 前方一致で既存の
+   GTM/GA4/毎朝のシート集計にそのまま乗る)。ReCVのSMS送信数が落ちた時・
+   _miss が立った時は、まずReCVタグ側のメソッド名が変わっていないか確認する。
+   送るのは【電話番号とメールアドレスだけ】。氏名・住所・生年月日・パスワード・
+   カード情報は絶対に渡さない。LPフォームには一切触らない(実フォームへの
+   focusout発火はv3.9.1の事故経緯があるため実装禁止) */
+var lastRelayedTel = null;      // 直近にReCVへ送った電話(同値の再送を防ぐ。✎修正で値が変われば再送する)
+var lastRelayedMail = null;     // 直近にReCVへ送ったメール(同上)
+var relayRetryTimer = null;     // 遅延ロード待ちのリトライタイマー(2秒間隔×最大5回)
+var relayRetries = 0;
+var relayMissTracked = false;   // hs_chat_lead_relay_miss はセッション1回だけ
+
+/* ReCVのタグが読み込まれ、直接連携できる状態か */
+function ngszSession() {
+  var s = window.ngszV2 && window.ngszV2.session;
+  return (s && typeof s.sendPhone === 'function' && typeof s.sendMail === 'function') ? s : null;
+}
+
+function ngszRelay() {
+  if (!CFG.ngszRelay) return;   // 既定OFF=タグに ngszRelay: true を書いたLPだけ動く
+  try {
+    var tel = answers.tel || '';
+    var mail = answers.email || '';
+    if (!tel && !mail) return;                 // まだ送るものが無い
+    /* 重複送信ガード: 未入力 or 送信済みと同値なら何もしない(earlyLeadCaptureは
+       next()のたびに走るため必須。✎修正で値が変わった時だけ新値を再送する) */
+    if ((!tel || tel === lastRelayedTel) && (!mail || mail === lastRelayedMail)) return;
+    var s = ngszSession();
+    if (!s) { scheduleNgszRetry(); return; }   // ReCVタグの読込がチャットより遅いケースの保険
+    if (relayRetryTimer) { clearInterval(relayRetryTimer); relayRetryTimer = null; }
+    /* 送信できた時だけ「送信済み」を記録する(例外時は次のステップで自然に再試行される) */
+    if (mail && mail !== lastRelayedMail) {
+      try { s.sendMail(mail); lastRelayedMail = mail; track('lead_relay_mail'); } catch (e) {}
+    }
+    if (tel && tel !== lastRelayedTel) {
+      try { s.sendPhone(tel); lastRelayedTel = tel; track('lead_relay_tel'); } catch (e) {}
+    }
+  } catch (e) {}   /* relayの失敗でチャットの進行を止めることは絶対にしない */
+}
+
+/* ReCVタグが未ロードの時のリトライ(2秒間隔×最大5回)。
+   拾えたら ngszRelay() を呼び直すので、待っている間に✎修正等で値が
+   変わっていても「その時点の最新値」が送られる。
+   5回で枯渇したら hs_chat_lead_relay_miss を1回だけ出す(サイレント禁止) */
+function scheduleNgszRetry() {
+  if (relayRetryTimer) return;   // 既に稼働中
+  relayRetries = 0;
+  relayRetryTimer = setInterval(function () {
+    try {
+      relayRetries++;
+      if (ngszSession()) {
+        clearInterval(relayRetryTimer); relayRetryTimer = null;
+        ngszRelay();               // 最新値で送る
+        return;
+      }
+      if (relayRetries >= 5) {
+        clearInterval(relayRetryTimer); relayRetryTimer = null;
+        if (!relayMissTracked) { relayMissTracked = true; track('lead_relay_miss'); }
+      }
+    } catch (e) {
+      try { clearInterval(relayRetryTimer); } catch (e2) {}
+      relayRetryTimer = null;
+    }
+  }, 2000);
 }
 
 /* ---------- メール入力時点の既登録チェック(emailDupCheck・既定OFF・v3.28.4) ----------
