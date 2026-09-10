@@ -66,8 +66,10 @@ window.HS_CHAT = {
   codNoticeImage: 'https://d2w53g1q050m78.cloudfront.net/hugskinshop/uploads/np/np_468x200-12.png',
   codNotice: '○このお支払方法の詳細\n商品の到着を確認してから、「コンビニ」「郵便局」「銀行」「PayPay」で後払いできる安心・簡単な決済方法です。請求書は、商品とは別に郵送されますので、発行から14日以内にお支払いをお願いします。お支払い期日を過ぎてもお支払いの確認ができない場合、手数料が加算される場合がございます。\n\n○ご注意\n後払い手数料：無料\n後払いのご注文には、株式会社ネットプロテクションズの後払いサービスが適用され、同社へ代金債権を譲渡します。NP後払い利用規約及び同社のプライバシーポリシーに同意して、後払いサービスをご選択ください。\nNP後払い利用規約：https://np-atobarai.jp/terms/atobarai-buyer.html\nサービス詳細：https://np-atobarai.jp/about/\nご利用限度額は累計残高で55,000円（税込）迄です。\nご利用者が未成年の場合、法定代理人の利用同意を得てご利用ください。',
 
-  /* ★NP③: 与信NGリカバリー（後払いで弾かれたらクレカ再注文へ自動誘導） */
-  paymentFallback: {},
+  /* ★NP③: 与信NGリカバリー（後払いで弾かれたらクレカ/代引きの再注文へ自動誘導）
+     daibiki: true = 与信NG時に代引きも選ばせる(v3.35.0〜)。LPフォーム(ecforce側の支払い方法設定)に
+     代引きが無いLPでは自動でクレカのみになるので、付けたままで安全 */
+  paymentFallback: { daibiki: true },
 
   opening: {
     images: [

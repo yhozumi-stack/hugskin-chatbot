@@ -30,8 +30,9 @@ ecforceタグ管理で全LPのタグを確認し、`skip: { ... payment: '102' .
 
 ```js
 /* --- NP切替セット(2026-07 v3.26.1〜) --- */
-/* ①与信NGリカバリー(与信落ち→クレカ再注文に自動誘導) */
-paymentFallback: {},
+/* ①与信NGリカバリー(与信落ち→クレカ再注文に自動誘導)。
+   daibiki: true を付けると代引きも選ばせる(v3.35.0〜・ecforce側の支払い方法に代引きがあるLPのみ効く) */
+paymentFallback: { daibiki: true },
 
 /* ②後払い選択直後のNPバナー(Befas/I-ne方式=バナーのみ) */
 codNoticeImage: 'https://yhozumi-stack.github.io/hugskin-chatbot/img/np_wiz_banner.png',

@@ -1,5 +1,10 @@
 /*! ============================================================
-    HugSkin 獲得チャットボット v3.34.0
+    HugSkin 獲得チャットボット v3.35.0
+    (v3.35.0: 与信NGリカバリーに代引きの選択肢 paymentFallback.daibiki を追加(既定OFF)。
+     タグで daibiki: true にしたLPだけ、与信NG画面でLPフォームに代引きの選択肢が
+     ある時「クレジットカード/代金引換」の2択を出す。代引きは手数料で合計が変わる
+     ため、ecforce再計算後の合計を載せた確認画面を挟んでから送信する。
+     クレカ側の流れ(カード入力→即送信)と daibiki 未設定のLPは従来どおり)
     (v3.34.0: サンクスオファー連携 thanksOffer を追加(既定OFF)。
      タグに thanksOffer: true を書いたLPだけ、ページ遷移時にチャット履歴を
      sessionStorageへ保存する(pagehide)。サンクスオファーページ(cv_upsell)に
@@ -181,9 +186,18 @@ var DEFAULTS = {
      ・失敗した支払いがクレジット自体の時は発動しない(誤爆防止)
      ※ecforce側の後払いが「リアルタイム(同期)与信」設定でないと発動しない
        (注文成立後の非同期与信NGではLPに戻ってこないため検知できない)
+     ・代引きも選ばせる(v3.35.0・daibiki: true): LPフォームに代引きの選択肢(文言に
+       「代引」か「代金引換」を含む)がある時だけ「クレジットカード/代金引換」の2択を出す。
+       代引きは手数料で合計が変わるため、ecforce再計算後の合計を載せた確認画面
+       (注意喚起文・同意チェック付き)を挟んでから送信する。クレカ側は従来どおり
+       カード入力→即送信。フォームに代引きが無いLPでは従来どおりクレカのみ(自動判定)
      タグ例(文言は全部任意・最小は paymentFallback: {} でON):
        paymentFallback: {
+         daibiki: true,   // 与信NG時に代引きも選ばせる(既定OFF)。'代金引換' のように判定語の指定も可
          msg:   '今回のお手続きでは、後払い決済がご利用いただけませんでした🙏\n誠に申し訳ございませんが、クレジットカードでのお手続きをお願いいたします',
+                // ↑daibiki有効時の既定文言は末尾が「別のお支払い方法でのお手続きをお願いいたします」になる
+         choiceMsg:  'ご希望のお支払い方法をお選びください',   // daibiki有効時の2択の質問文
+         daibikiMsg: '代金引換でのお手続きですね✨\nご注文内容をご確認のうえ、確定ボタンを押してください',  // 代引き選択後の確認画面の口上
          msg2:  'クレジットカード情報のご入力をお願いいたします',
          pwMsg: 'セキュリティ保護のため、パスワードのみもう一度ご入力ください🙏',
        } */
@@ -722,7 +736,7 @@ var editReturnIdx = null;  // 修正完了後に戻るステップindex
 var pendingIdx = 0;        // いま表示中の質問のステップindex
 var prefilled = false;     // 確認画面表示時にLPフォームへ先行転記済みか
 var chatAgreeChecked = null;  // 確認画面の利用規約チェック状態(null=チェックUI非表示)
-var payNG = null;          // 与信NGリカバリー対象(mount時に判定。{value,label}=クレカ選択肢 / null=非対象)
+var payNG = null;          // 与信NGリカバリー対象(mount時に判定。{value,label,credit,daibiki}=切替先の選択肢 / null=非対象)
 var totalInput = steps.filter(function (s) {
   return s.type === 'fields' || s.type === 'zip' || s.type === 'choice' || s.type === 'card' || s.type === 'birth' || s.type === 'address';
 }).length;
@@ -1557,8 +1571,13 @@ async function runStepInner(i) {
   if (s.type === 'card' && answers.card_registered && !editMode) {
     return runStep(i + 1);
   }
-  /* 与信NGリカバリーの最終ステップ: 確認画面を挟まず即転記→自動送信 */
-  if (s.type === 'pf_submit') {
+  /* 与信NGリカバリーの最終ステップ(summary + pf):
+     クレジット → 確認画面を挟まず即転記→自動送信(カード入力の「次へ」が確定を兼ねる・従来どおり)
+     代引き(daibiki) → 手数料で合計が変わるため、この下の通常処理で確認画面を出してから送信 */
+  if (s.type === 'summary' && s.pf && (answers.payment_label || '').indexOf('クレジット') >= 0) {
+    /* 代引きの確認画面で先行転記済み(prefilled)でも、カード欄はイベント付きの転記が
+       まだなので transfer() に必ず fillLocalForm を通させる(ZEUS 3DS対策のカード転記) */
+    prefilled = false;
     track('payment_ng_retry');
     transfer();
     return;
@@ -1643,12 +1662,13 @@ function paymentChoicesFromPage() {
 }
 
 function renderChoice(s, i) {
-  var it = stepIntro(s);
+  /* 与信NGリカバリーの2択(s.pf)は選択肢固定(クレジット/代引きだけ)・質問文もタグのtextsで上書きしない */
+  var it = s.pf ? s.intro : stepIntro(s);
   if (it) botBubble(it);
   var wrapC = document.createElement('div');
   /* 支払い方法はform-plus風の全幅行ボタンにする */
   wrapC.className = s.key === 'payment' ? 'choices choices-pay' : 'choices';
-  var choiceList = (s.key === 'payment' && (paymentChoicesFromPage() || CFG.paymentChoices)) || s.choices;
+  var choiceList = (s.key === 'payment' && !s.pf && (paymentChoicesFromPage() || CFG.paymentChoices)) || s.choices;
   /* 支払いボタンの表示文言をタグの paymentLabels で差し替え(値はそのまま) */
   if (s.key === 'payment' && CFG.paymentLabels) {
     choiceList = choiceList.map(function (c) {
@@ -1661,7 +1681,7 @@ function renderChoice(s, i) {
   }
   /* 登録済みカードがある会員(ログイン中)は、支払い方法の選択そのものを
      「このカードで進む / 別のカードにする / 後払い」の3択に差し替える(v3.31.0) */
-  if (s.key === 'payment' && CFG.registeredCard !== false) {
+  if (s.key === 'payment' && !s.pf && CFG.registeredCard !== false) {
     var regNow = registeredCardInfo() || regCardCache;
     if (regNow && choiceList.some(function (c) { return c.label.indexOf('クレジット') >= 0; })) {
       return renderPaymentWithRegisteredCard(s, i, choiceList, regNow);
@@ -1687,7 +1707,8 @@ function pickChoice(s, i, c, displayLabel) {
       answers[s.key + '_label'] = c.label;
       userBubble(displayLabel || c.label, s.key);
       if (!editMode) { doneCount++; progress(); }
-      track('step_' + s.key);
+      /* 与信NGリカバリーの2択は通常ファネル(step_payment)に混ぜず、選んだ方を別名で計測 */
+      track(s.pf ? 'payment_ng_' + (c.label.indexOf('クレジット') >= 0 ? 'credit' : 'daibiki') : 'step_' + s.key);
       /* 後払いを選んだら訴求バナー(codNoticeImage)と規約・注意文(codNotice)を表示。
          どちらも空なら非表示。バナーだけ(Befas/I-ne方式)にするなら codNotice: '' にする。
          テキストのデザインはform-plus準拠: 「利用規約」タイトル+ピンク本文+「無料」赤字 */
@@ -1952,7 +1973,7 @@ function readMemberForm() {
 /* 短縮フローで出さない(=登録情報で足りる)入力ステップか */
 function memberSkippableStep(s) {
   if (!s) return false;
-  if (s.type === 'summary' || s.type === 'card' || s.type === 'pf_submit') return false;
+  if (s.type === 'summary' || s.type === 'card') return false;
   if (s.key === 'payment') return false;
   return s.type === 'fields' || s.type === 'zip' || s.type === 'birth'
       || s.type === 'address' || s.type === 'choice';
@@ -2117,8 +2138,11 @@ function detectPaymentNGError() {
   return false;
 }
 
-/* 与信NGリカバリーを発動できる画面なら、切替先のクレジット選択肢{value,label}を返す。
-   発動条件: ①タグでpaymentFallback有効 ②与信NG画面 ③フォームにクレジットの選択肢がある
+/* 与信NGリカバリーを発動できる画面なら、切替先の選択肢を返す:
+     { value, label,                … 切替先(クレジット優先。従来互換)
+       credit:  {value,label}|null,  … フォームのクレジット選択肢
+       daibiki: {value,label}|null } … 代引きの選択肢(タグで daibiki 有効かつフォームに存在する時だけ・v3.35.0)
+   発動条件: ①タグでpaymentFallback有効 ②与信NG画面 ③フォームにクレジット(または有効化した代引き)の選択肢がある
    ④失敗した支払いがクレジット以外(=後払い系)。クレカ自体の決済失敗に
    「クレジットカードでお願いします」と案内する矛盾を構造的に防ぐ */
 function paymentNGRecovery() {
@@ -2126,12 +2150,21 @@ function paymentNGRecovery() {
   if (!detectPaymentNGError()) return null;
   var sel = document.querySelector('[name="order[payment_attributes][payment_method_id]"]');
   if (!sel || !sel.options) return null;
-  var failed = '', credit = null, i, o;
+  var pf = CFG.paymentFallback;
+  /* 代引きの判定語: 既定は「代引」or「代金引換」。タグで daibiki: '文言' と書けばその語で判定 */
+  var dbRe = null;
+  if (pf.daibiki) {
+    dbRe = typeof pf.daibiki === 'string' && pf.daibiki
+      ? new RegExp(pf.daibiki.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      : /代引|代金引換/;
+  }
+  var failed = '', credit = null, daibiki = null, i, o;
   for (i = 0; i < sel.options.length; i++) {
     o = sel.options[i];
     if (!o.value) continue;
     if (o.selected) failed = o.text;
-    if (!credit && o.text.indexOf('クレジット') >= 0) credit = { value: o.value, label: o.text.trim() };
+    if (!credit && o.text.indexOf('クレジット') >= 0) { credit = { value: o.value, label: o.text.trim() }; continue; }
+    if (dbRe && !daibiki && dbRe.test(o.text)) daibiki = { value: o.value, label: o.text.trim() };
   }
   /* 失敗した支払い方法はURLのpm=が最も確実(selectの選択状態はecforceの再描画次第のため) */
   try {
@@ -2140,9 +2173,11 @@ function paymentNGRecovery() {
       if (sel.options[i].value === pm) failed = sel.options[i].text;
     }
   } catch (e) {}
-  if (!credit) return null;
   if (failed.indexOf('クレジット') >= 0) return null;
-  return credit;
+  if (daibiki && failed.trim() === daibiki.label) daibiki = null;   // 失敗したのが代引き自体なら代引きは出さない(想定外の保険)
+  var main = credit || daibiki;
+  if (!main) return null;
+  return { value: main.value, label: main.label, credit: credit, daibiki: daibiki };
 }
 
 /* パスワードの一時預かり(与信NGで弾き返された時の引き継ぎ用)。
@@ -2182,9 +2217,17 @@ function clearPwHold() { try { sessionStorage.removeItem(PW_HOLD_KEY); } catch (
 async function runPaymentRecovery() {
   track('payment_ng_detected');
   var pf = CFG.paymentFallback || {};
-  /* 支払いをクレジットに切替(カード表示条件・転記・自動送信の判定が全てこれで通る) */
-  answers.payment = payNG.value;
-  answers.payment_label = payNG.label;
+  /* 切替先の候補: クレジット(従来) + 代引き(タグで daibiki 有効かつフォームに選択肢がある時・v3.35.0)。
+     候補が2つなら2択を聞き、1つならその支払いに直接切替
+     (カード表示条件・転記・自動送信の判定が全て answers.payment_label で通る) */
+  var opts = [];
+  if (payNG.credit) opts.push(payNG.credit);
+  if (payNG.daibiki) opts.push(payNG.daibiki);
+  var askPay = opts.length >= 2;
+  if (!askPay) {
+    answers.payment = opts[0].value;
+    answers.payment_label = opts[0].label;
+  }
 
   /* パスワード復旧の優先順:
      ①フォームに欄が無い(ecforce設問から除外) → 何もしない
@@ -2208,9 +2251,18 @@ async function runPaymentRecovery() {
       fields: [{ key: 'password', label: 'パスワード（半角英数8文字以上）',
         inputType: 'password', autocomplete: 'new-password', validate: 'password', displayAs: '••••••••' }] });
   }
+  if (askPay) {
+    rec.push({ type: 'choice', key: 'payment', pf: true,
+      intro: pf.choiceMsg || 'ご希望のお支払い方法をお選びください',
+      choices: opts });
+  }
   rec.push({ type: 'card', key: 'card',
     intro: pf.msg2 != null ? pf.msg2 : 'クレジットカード情報のご入力をお願いいたします' });
-  rec.push({ type: 'pf_submit' });
+  /* 最終ステップ: クレジットなら確認画面を挟まず即送信(runStepInnerで短絡・従来どおり)。
+     代引きは手数料で合計が変わるので、ecforce再計算後の合計を載せた確認画面を出してから送信 */
+  rec.push({ type: 'summary', key: 'summary', pf: true,
+    msg: pf.daibikiMsg != null ? pf.daibikiMsg : '代金引換でのお手続きですね✨\nご注文内容をご確認のうえ、確定ボタンを押してください',
+    submitLabel: 'この内容で注文する →' });
   steps = rec;
   totalInput = rec.length - 1;
   doneCount = 0;
@@ -2218,7 +2270,10 @@ async function runPaymentRecovery() {
   progress();
 
   var t = typing(); await delay(CFG.typingMs); t.remove();
-  botBubble(pf.msg || '今回のお手続きでは、後払い決済がご利用いただけませんでした🙏\n誠に申し訳ございませんが、クレジットカードでのお手続きをお願いいたします');
+  var msgDefault = payNG.credit && !payNG.daibiki
+    ? '今回のお手続きでは、後払い決済がご利用いただけませんでした🙏\n誠に申し訳ございませんが、クレジットカードでのお手続きをお願いいたします'
+    : '今回のお手続きでは、後払い決済がご利用いただけませんでした🙏\n誠に申し訳ございませんが、' + (askPay ? '別のお支払い方法' : '代金引換') + 'でのお手続きをお願いいたします';
+  botBubble(pf.msg || msgDefault);
   runStep(0);
 }
 
@@ -2969,7 +3024,9 @@ async function renderSummary(s) {
   progress();
   /* タグの summaryOptions でシナリオ設定を上書きできる(LP個別・push不要) */
   var so = CFG.summaryOptions || {};
-  var sumMsg = so.msg != null ? so.msg : s.msg;
+  /* 与信NGリカバリーの確認画面(s.pf)はタグの summaryOptions.msg(通常フローの口上。
+     「後払いで承ります」等が入っているLPがある)を使わず、リカバリー用の口上を出す */
+  var sumMsg = s.pf ? s.msg : (so.msg != null ? so.msg : s.msg);
   /* 口上は出さず、いきなり最終確認カードを表示する(msgを設定した場合のみ発話) */
   if (editReturned) botBubble('修正を反映しました✅');
   else if (sumMsg) botBubble(sumMsg);
@@ -2981,6 +3038,9 @@ async function renderSummary(s) {
   var localForm = CFG.transferMode !== 'redirect' ? findLocalForm() : null;
   if (localForm) {
     var t = typing();
+    /* 与信NGリカバリー(s.pf): 弾き返し画面には失敗した支払いでの合計(qa-total)が既に描画されている。
+       支払いを代引きに切り替えた後の再計算結果(手数料込み)を待つため、切替前の表示を控えておく */
+    var qaBefore = s.pf ? qaText('total') + '|' + qaText('charge') : null;
     try { resolveSkips(); fillLocalForm(localForm); prefilled = true; } catch (e) {}
     /* ecforceのAJAX再計算を待つ。qa-totalが描画されるまで最大4.5秒ポーリングし、
        その間ecforceの再描画で支払いセレクトが初期値に戻されていたら黙って直す。
@@ -2993,7 +3053,10 @@ async function renderSummary(s) {
         await delay(400); waited += 400;
         var selP = localForm.querySelector('[name="order[payment_attributes][payment_method_id]"]');
         if (selP && answers.payment && selP.value !== answers.payment) selP.value = answers.payment;
-        if (qaText('total')) break;
+        if (!qaText('total')) continue;
+        /* リカバリー時は「表示が変わる」まで待つ(最大3秒。手数料0円で合計が変わらないLPは3秒で抜ける) */
+        if (qaBefore != null && qaText('total') + '|' + qaText('charge') === qaBefore && waited < 3000) continue;
+        break;
       }
     }
     t.remove();
@@ -3098,7 +3161,7 @@ async function renderSummary(s) {
       try { card.scrollIntoView({ block: 'end' }); } catch (e) {}
     }, 400);
   }
-  track('summary_view');
+  if (!s.pf) track('summary_view');   // リカバリーの確認画面は通常ファネルに混ぜない(代引き選択は payment_ng_daibiki で計測済み)
   /* 行タップ → その項目だけ修正 */
   card.querySelector('table').addEventListener('click', function (e) {
     var tr = e.target && e.target.closest ? e.target.closest('tr[data-k]') : null;
@@ -3117,6 +3180,7 @@ async function renderSummary(s) {
   }
   goEl.addEventListener('click', function () {
     this.textContent = '転送中…'; this.disabled = true;
+    if (s.pf) track('payment_ng_retry');   // 与信NGリカバリー(代引き)の再送信
     transfer();
   });
 }

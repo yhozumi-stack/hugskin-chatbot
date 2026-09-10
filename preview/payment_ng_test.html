@@ -18,11 +18,14 @@
 <h1 style="font-size:18px">与信NGリカバリーの再現ページ</h1>
 <div class="howto">
   <b>テストモード(URLパラメータ):</b><br>
-  ・<a href="payment_ng_test.html?ng=1">?ng=1</a> … 与信NG画面(パスワードは質問シナリオ) → <b>案内→PW再質問→カード→送信</b><br>
+  ・<a href="payment_ng_test.html?ng=1">?ng=1</a> … 与信NG画面(パスワードは質問シナリオ) → <b>案内→PW再質問→カード→送信</b>(フォームに代引きがあっても daibiki 未設定なら2択は出ない=既定OFF)<br>
   ・<a href="payment_ng_test.html?ng=1&skip=1">?ng=1&skip=1</a> … skip:{password:'auto'} のLP → <b>案内→カードのみ→送信</b>(PWは自動生成)<br>
   ・<a href="payment_ng_test.html?ng=1&nopw=1">?ng=1&nopw=1</a> … フォームにPW欄が無いLP → <b>案内→カードのみ→送信</b><br>
   ・<a href="payment_ng_test.html?ng=1&held=1">?ng=1&held=1</a> … 引き継ぎ成功ケース → <b>案内→カードのみ→送信</b>(PW=held-pass-1234が自動復元)<br>
   ・<a href="payment_ng_test.html?ng=1&pm=21">?ng=1&pm=21</a> … クレカ自体の失敗(pm=クレカID) → <b>発動しない</b>(通常フロー)<br>
+  ・<a href="payment_ng_test.html?ng=1&daibiki=1">?ng=1&daibiki=1</a> … paymentFallback:{daibiki:true} → <b>案内→PW再質問→2択(クレジット/代金引換)</b>。代金引換なら<b>確認画面(手数料330円・合計3,310円に再計算)→「この内容で注文する」→送信</b> / クレジットなら<b>カード→即送信</b><br>
+  ・<a href="payment_ng_test.html?ng=1&daibiki=1&held=1">?ng=1&daibiki=1&held=1</a> … PW引き継ぎ成功+2択 → <b>案内→2択→…</b>(PW再質問なし)<br>
+  ・<a href="payment_ng_test.html?ng=1&daibiki=1&nodb=1">?ng=1&daibiki=1&nodb=1</a> … daibiki有効だがフォームに代引きが無いLP → <b>従来どおりクレカのみ</b>(2択は出ない)<br>
   ・<a href="payment_ng_test.html">パラメータ無し</a> … 通常LP。チャットを完走すると自動送信が<b>この?ng=1画面へ遷移</b>(実際の弾き返しを一気通貫で再現。PW引き継ぎの本番同等テスト)<br>
   ・<a href="payment_ng_test.html?ng=1&off=1">?ng=1&off=1</a> … paymentFallbackタグ未設定 → <b>何も起きない</b>(既定OFFの確認)
 </div>
@@ -68,6 +71,7 @@
       <option value="">選択してください</option>
       <option value="21">クレジットカード一括</option>
       <option value="102">NP後払いリアルタイムwiz</option>
+      <option value="3" id="opt-daibiki">代金引換</option>
     </select>
   </label>
   <label>カード番号<input name="order[payment_attributes][source_attributes][number]"></label>
@@ -85,6 +89,7 @@
   <table style="font-size:12px">
     <tr><td class="qa-product_name">HugSkin C10 オールインセラム【定期】_0012</td>
         <td class="qa-product_price">2,709円</td><td class="qa-product_quantity">1 個</td></tr>
+    <tr><td>手数料 <span class="qa-charge"></span></td></tr>
     <tr><td>合計 <span class="qa-total">2,980円</span></td></tr>
   </table>
   <label style="display:none">
@@ -133,6 +138,16 @@ window.dataLayer = window.dataLayer || [];   /* GTM相当(計測イベントの�
     }
   }
   if (has('nopw')) document.getElementById('pw-row').remove();
+  if (has('nodb')) document.getElementById('opt-daibiki').remove();   /* フォームに代引きが無いLPの再現 */
+
+  /* ecforceの支払い方法変更時のAJAX再計算(qa-*の再描画)を模擬: 600ms後に代引き手数料330円を反映 */
+  F.querySelector('[name="order[payment_attributes][payment_method_id]"]').addEventListener('change', function () {
+    var pv = this.value;
+    setTimeout(function () {
+      document.querySelector('.qa-charge').textContent = pv === '3' ? '330円' : '';
+      document.querySelector('.qa-total').textContent = pv === '3' ? '3,310円' : '2,980円';
+    }, 600);
+  });
 
   /* 注文ボタン: 通常ページから押されたら与信NG画面へ遷移(実際の弾き返しの再現)。
      NG画面から押されたら(=リカバリーの再送信)結果を表示して成功扱い */
@@ -146,7 +161,8 @@ window.dataLayer = window.dataLayer || [];   /* GTM相当(計測イベントの�
     var v = function (name) { var el = F.querySelector('[name="' + name + '"]'); return el ? el.value : '(欄なし)'; };
     r.style.display = 'block';
     r.innerHTML = '<b>✅ 再送信された内容(モック):</b><br>'
-      + '支払い方法ID: ' + v('order[payment_attributes][payment_method_id]') + ' (期待値: 21=クレジット)<br>'
+      + '支払い方法ID: ' + v('order[payment_attributes][payment_method_id]') + ' (期待値: 21=クレジット / 3=代引き)<br>'
+      + '合計(qa-total): ' + document.querySelector('.qa-total').textContent + ' / 手数料: ' + (document.querySelector('.qa-charge').textContent || '(なし)') + '<br>'
       + 'パスワード: ' + (v('order[customer_attributes][password]') || '(空)') + '<br>'
       + 'カード番号: ' + v('order[payment_attributes][source_attributes][number]')
       + ' / ' + v('order[payment_attributes][source_attributes][month]') + '/' + v('order[payment_attributes][source_attributes][year]')
@@ -162,6 +178,7 @@ window.dataLayer = window.dataLayer || [];   /* GTM相当(計測イベントの�
     opening: { stockCheck: false },
   };
   if (!has('off')) window.HS_CHAT.paymentFallback = {};
+  if (has('daibiki')) window.HS_CHAT.paymentFallback = { daibiki: true };   /* 与信NG時に代引きも選ばせる(v3.35.0) */
   if (has('skip')) window.HS_CHAT.skip = { password: 'auto' };
   if (!has('ng')) window.HS_CHAT.autoOpen = 'immediate';   /* 通常ページは通常どおり自動起動 */
   /* ?npimg=1: 後払い選択直後のNPバナー(バナーのみ=Befas方式) / ?npimg=2: バナー+規約文 */
